@@ -33,6 +33,7 @@ _log zpool create zroot /var/zroot
 _log zfs create -o mountpoint=/jail zroot/jail
 _log zfs create zroot/jail/base
 _log "( cd /jail/base && fetch -o - http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/$(uname -r)/base.txz | tar -xJf -)"
+_log "printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /jail/base/etc/resolv.conf"
 _log zfs snap zroot/jail/base@release
 
 _log "freebsd-update fetch --not-running-from-cron | cat"

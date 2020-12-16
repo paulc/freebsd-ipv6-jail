@@ -32,7 +32,7 @@ _log truncate -s 10G /var/zroot
 _log zpool create zroot /var/zroot
 _log zfs create -o mountpoint=/jail zroot/jail
 _log zfs create zroot/jail/base
-_log fetch -o -  http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/$(uname -r)/base.txz | (cd /jail/base; tar -xJf -)
+_log "( cd /jail/base && fetch -o - http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/$(uname -r)/base.txz | tar -xJf -)"
 _log zfs snap zroot/jail/base@release
 
 rm -f /firstboot

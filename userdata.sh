@@ -2,7 +2,7 @@
 
 set -o pipefail errexit nounset
 
-pkg install -y git
+pkg install -y git-lite
 
 TMPDIR=$(mktemp -d)
 

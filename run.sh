@@ -35,5 +35,8 @@ _log zfs create zroot/jail/base
 _log "( cd /jail/base && fetch -o - http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/$(uname -r)/base.txz | tar -xJf -)"
 _log zfs snap zroot/jail/base@release
 
-rm -f /firstboot
-reboot
+_log "freebsd-update fetch --not-running-from-cron | cat"
+_log "freebsd-update install --not-running-from-cron || echo No updates available"
+
+_log rm -f /firstboot
+_log reboot

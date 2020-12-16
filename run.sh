@@ -35,6 +35,4 @@ _log zfs create zroot/jail/base
 _log fetch -o -  http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/$(uname -r)/base.txz | (cd /jail/base; tar -xJf -)
 _log zfs snap zroot/jail/base@release
 
-
-
-
+reboot

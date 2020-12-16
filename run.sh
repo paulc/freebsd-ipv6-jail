@@ -27,6 +27,7 @@ wq
 EOM
 
 _log install -v -m 755 ./files/ipfw.rules /etc
+_log install -v -m 755 ./files/vnet.sh /root
 
 _log truncate -s 10G /var/zroot
 _log zpool create zroot /var/zroot

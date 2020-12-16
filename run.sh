@@ -26,10 +26,15 @@ g/IPV6_PREFIX/s/IPV6_PREFIX/${IPV6_PREFIX}/p
 wq
 EOM
 
-_log install -v ./files/ipfw.rules /etc
+_log install -v -m 755 ./files/ipfw.rules /etc
 
 _log truncate -s 10G /var/zroot
 _log zpool create zroot /var/zroot
+_log zfs create -o mountpoint=/jail zroot/jail
+_log zfs create -o zroot/jail/base
+_log fetch -o http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/$(uname -r)/base.txz
+_log zfs snap zroot/jail/base@release
+
 
 
 

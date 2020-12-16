@@ -1,18 +1,18 @@
 
-IPV6_PREFIX=$(python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("::")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')
+IPV6_PREFIX=$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("::")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')
 
-_log sysrc  gateway_enable="YES" \
-            ipv6_gateway_enable="YES" \
-            ip6addrctl_policy="ipv6_prefer" \
+_log sysrc  gateway_enable=YES \
+            ipv6_gateway_enable=YES \
+            ip6addrctl_policy=ipv6_prefer \
             cloned_interfaces="bridge0" \
-            ifconfig_bridge0="up addm vtnet0" \
-            firewall_enable="YES" \
-            firewall_logif="YES" \
-            firewall_nat64_enable="YES" \
-            firewall_script="/etc/ipfw.rules" \
-            syslogd_flags="-s" \
-            sendmail_enable="NONE" \
-            zfs_enable="YES" 
+            ifconfig_bridge0=\"up addm vtnet0\" \
+            firewall_enable=YES \
+            firewall_logif=YES \
+            firewall_nat64_enable=YES \
+            firewall_script=/etc/ipfw.rules \
+            syslogd_flags=-ss \
+            sendmail_enable=NONE \
+            zfs_enable=YES 
 
 _log tee -a /boot/loader.conf <<EOM
 net.inet.ip.fw.default_to_accept=1
@@ -29,7 +29,7 @@ EOM
 _log install -v ./files/ipfw.rules /etc
 
 _log truncate -s 10G /var/zroot
-_log zpool create zroot /car/zroot
+_log zpool create zroot /var/zroot
 
 
 

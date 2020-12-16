@@ -29,10 +29,21 @@ EOM
 _log install -v -m 755 ./files/ipfw.rules /etc
 _log install -v -m 755 ./files/vnet.sh /root
 
-_log truncate -s 10G /var/zroot
-_log zpool create zroot /var/zroot
+if gpart show da0 | grep -qs CORRUPT
+then
+    # Wrong disk size - fix and add zfs partition
+    _log gpart recover da0
+    _log gpart add -t freebsd-zfs da0
+    _log zpool create zroot $(gpart show da0 | awk '/freebsd-zfs/ { print "/dev/da0p" $3 }')
+else 
+    # Create ZFS file
+    _log truncate -s 10G /var/zroot
+    _log zpool create zroot /var/zroot
+fi
+
 _log zfs create -o mountpoint=/jail zroot/jail
 _log zfs create zroot/jail/base
+
 _log "( cd /jail/base && fetch -o - http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/$(uname -r)/base.txz | tar -xJf -)"
 _log "printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /jail/base/etc/resolv.conf"
 _log zfs snap zroot/jail/base@release

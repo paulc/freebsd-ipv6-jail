@@ -19,4 +19,6 @@ EOM
 
 hcloud server create-image --description "FreeBSD-12.2-base-cx11-$(date +%Y%m%d-%H%M%S)" --type snapshot img-update
 
+hcloud server delete img-update
+
 hcloud image delete $IMAGE

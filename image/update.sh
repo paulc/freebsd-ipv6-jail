@@ -21,6 +21,11 @@ hcloud server create --location ${LOCATION} --type ${TYPE} --image ${IMAGE} --na
   shutdown -p now ) 2>&1 | tee /var/log/update-${TS}.log
 EOM
 
+while [ $(hcloud server describe -o format='{{.Status}}' $NAME) != "off" ]; do
+    printf "Waiting...\r"
+    sleep 1
+done
+
 hcloud server create-image --description "FreeBSD-12.2-base-${TYPE}-${TS}" --type snapshot img-update
 
 hcloud server delete ${NAME}

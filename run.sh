@@ -48,10 +48,10 @@ else
     _log zpool create zroot /var/zroot
 fi
 
-_log zfs create -o mountpoint=/jail zroot/jail
+_log zfs create -o mountpoint=/jail -o compression=lz4 zroot/jail
 _log zfs create zroot/jail/base
 
-_log "( cd /jail/base && fetch -o - http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/$(uname -r)/base.txz | tar -xJf -)"
+_log "( cd /jail/base && fetch -o - http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/$(uname -r | sed -e 's/-p[0-9]+$//')/base.txz | tar -xJf -)"
 _log "printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /jail/base/etc/resolv.conf"
 _log zfs snap zroot/jail/base@release
 

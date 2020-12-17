@@ -8,8 +8,6 @@ TMPDIR=$(mktemp -d)
 
 cd $TMPDIR 
 
-pwd
-
 /usr/local/bin/git clone https://github.com/paulc/freebsd-ipv6-jail.git .
 
 . ./utils.sh

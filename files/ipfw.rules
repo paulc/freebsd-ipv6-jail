@@ -1,0 +1,37 @@
+
+IPV4_PREFIX="__IPV4_PREFIX__::/64"
+IPV6_PREFIX="__IPV6_PREFIX__/32"
+
+# Flush
+ipfw -q flush
+ipfw -q nat64lsn NAT64 destroy
+
+# Create nat64 instance
+ipfw nat64lsn NAT64 create prefix4 ${IPV4_PREFIX} prefix6 64:ff9b::/96
+
+# Allow established connections
+ipfw add check-state
+
+# Allow icmp6 neighbour advertisment 
+ipfw add allow icmp6 from any to any icmp6types 135,136
+
+# Allow incoming icmp echo-requests (need keep-state to allow icmp from nat64)
+ipfw add allow icmp from any to ${IPV4_PREFIX} icmptypes 8 keep-state
+
+# Allow incoming SSH/DNS (IPv4)
+ipfw add allow ip4 from any to ${IPV4_PREFIX} 22
+ipfw add allow ip4 from any to ${IPV4_PREFIX} 53
+
+# Enable NAT64
+ipfw add nat64lsn NAT64 ip6 from ${IPV6_PREFIX} to 64:ff9b::/96 in
+ipfw add nat64lsn NAT64 ip4 from any to ${IPV4_PREFIX} in
+
+# Allow outgoing IPv4 (keep-state to skip nat64)
+ipfw add allow ip4 from ${IPV4_PREFIX} to any keep-state
+
+# Set NAT64 route
+route -6 add 64:ff9b::/96 fe80::1%lo0 
+
+# Enable direct output
+sysctl net.inet.ip.fw.nat64_direct_output=1
+

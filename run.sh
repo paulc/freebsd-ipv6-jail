@@ -1,5 +1,6 @@
 
 IPV6_PREFIX=$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("::")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')
+IPV4_PREFIX=$(tr -d \" < /var/hcloud/public-ipv4)
 
 _log sysrc  gateway_enable=YES \
             ipv6_gateway_enable=YES \
@@ -27,6 +28,12 @@ wq
 EOM
 
 _log install -v -m 755 ./files/ipfw.rules /etc
+_log ex -s /etc/ipfw.rules <<EOM
+g/IPV4_PREFIX/s/__IPV4_PREFIX__/${IPV4_PREFIX}/p
+g/IPV6_PREFIX/s/__IPV6_PREFIX__/${IPV6_PREFIX}/p
+wq
+EOM
+
 _log install -v -m 755 ./files/vnet.sh /root
 
 if gpart show da0 | grep -qs CORRUPT

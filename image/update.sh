@@ -11,14 +11,14 @@ NAME="update-${TS}"
 
 hcloud server create --location ${LOCATION} --type ${TYPE} --image ${IMAGE} --name ${NAME} --user-data-from-file - <<'EOM'
 #!/bin/sh
-( freebsd-update fetch --not-running-from-cron | cat
+( freebsd-update fetch --not-running-from-cron | head
   freebsd-update install --not-running-from-cron || echo No updates available
   pkg update 
   pkg upgrade -y
   rm /var/hcloud/*
   rm /etc/ssh/*key*
   touch /firstboot
-  shutdown -p now ) 2>&1 | tee /var/log/update-${TS}.log
+  shutdown -p now ) 2>&1 | tee /var/log/update-$(date +%Y%m%d-%H%M%S).log
 EOM
 
 printf "Waiting for server shutdown"
@@ -34,4 +34,4 @@ hcloud server create-image --description "FreeBSD-12.2-base-${TYPE}-${TS}" --typ
 
 hcloud server delete ${NAME}
 
-hcloud image delete ${IMAGE}
+echo hcloud image delete ${IMAGE}

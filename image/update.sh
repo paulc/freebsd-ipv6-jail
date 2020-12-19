@@ -34,4 +34,4 @@ hcloud server create-image --description "FreeBSD-12.2-base-${TYPE}-${TS}" --typ
 
 hcloud server delete ${NAME}
 
-echo hcloud image delete ${IMAGE}
+hcloud image delete ${IMAGE}

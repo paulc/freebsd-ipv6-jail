@@ -1,6 +1,8 @@
 #!/bin/sh
 
-set -o pipefail errexit nounset
+set -o pipefail
+set -o errexit
+set -o nounset
 
 pkg install -y git-lite
 

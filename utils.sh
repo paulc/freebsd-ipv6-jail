@@ -1,6 +1,8 @@
 #!/bin/sh
 
-set -o pipefail errexit nounset
+set -o pipefail
+set -o errexit
+set -o nounset
 
 _NORMAL=$(printf "\033[0m")
 _RED=$(printf "\033[0;31m")

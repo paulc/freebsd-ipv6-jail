@@ -2,6 +2,11 @@
 IPV6_PREFIX=$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("::")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')
 IPV4_PREFIX=$(tr -d \" < /var/hcloud/public-ipv4)
 
+_log "freebsd-update fetch --not-running-from-cron | cat"
+_log "freebsd-update install --not-running-from-cron || echo No updates available"
+_log "pkg update"
+_log "pkg upgrade -y"
+
 _log sysrc  gateway_enable=YES \
             ipv6_gateway_enable=YES \
             ip6addrctl_policy=ipv6_prefer \
@@ -35,6 +40,7 @@ wq
 EOM
 
 _log install -v -m 755 ./files/vnet.sh /root
+_log install -v -m 755 ./files/route_epair.sh /root
 
 if gpart show da0 | grep -qs CORRUPT
 then
@@ -48,15 +54,23 @@ else
     _log zpool create zroot /var/zroot
 fi
 
-_log zfs create -o mountpoint=/jail -o compression=lz4 zroot/jail
-_log zfs create zroot/jail/base
+_log "zfs create -o mountpoint=/jail -o compression=lz4 zroot/jail"
+_log "zfs create zroot/jail/base"
 
 _log "( cd /jail/base && fetch -o - http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/$(uname -r | sed -e 's/-p[0-9]*$//')/base.txz | tar -xJf -)"
-_log "printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /jail/base/etc/resolv.conf"
-_log zfs snap zroot/jail/base@release
+_log "zfs snap zroot/jail/base@release"
 
-_log "freebsd-update fetch --not-running-from-cron | cat"
-_log "freebsd-update install --not-running-from-cron || echo No updates available"
+_log "printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /jail/base/etc/resolv.conf"
+_log "sysrc -f /jail/base/etc/rc.conf sendmail_enable=NONE syslogd_flags=-ss"
+_log "jail -c base"
+_log "jexec base" <<'EOM'
+freebsd-update fetch --not-running-from-cron | head
+freebsd-update install --not-running-from-cron || echo No updates available
+ASSUME_ALWAYS_YES=yes pkg bootstrap
+pkg update
+EOM
+
+_log "zfs snap zroot/jail/base@$(date +%s)"
 
 _log rm -f /firstboot
 _log reboot

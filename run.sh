@@ -62,13 +62,14 @@ _log "zfs snap zroot/jail/base@release"
 
 _log "printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /jail/base/etc/resolv.conf"
 _log "sysrc -f /jail/base/etc/rc.conf sendmail_enable=NONE syslogd_flags=-ss"
-_log "jail -c base"
+_log "jail -vc base"
 _log "jexec base" <<'EOM'
 freebsd-update fetch --not-running-from-cron | head
 freebsd-update install --not-running-from-cron || echo No updates available
 ASSUME_ALWAYS_YES=yes pkg bootstrap
 pkg update
 EOM
+_log "jail -vc base"
 
 _log "zfs snap zroot/jail/base@$(date +%s)"
 

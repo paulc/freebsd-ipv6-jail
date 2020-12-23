@@ -14,7 +14,7 @@ The rough sequence of events is:
   [hcloud](https://github.com/hetznercloud/cli) cli utility 
   with the [userdata.sh](./userdata.sh) script - ie:
 
-    * `hcloud server create-image --location ${LOCATION} --type ${TYPE} --image ${IMAGE} --name ${NAME} --ssh-key ${SSHKEY} --user-data-from-file ./userdata.sh'`
+    * `hcloud server create-image --location ${LOCATION} --type ${TYPE} --image ${IMAGE} --name ${NAME} --ssh-key ${SSHKEY} --user-data-from-file ./userdata.sh`
 
 - The `hcloud` utility configures the server and runs the 
   [userdata.sh](./userdata.sh) script 

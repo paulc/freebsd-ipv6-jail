@@ -2,7 +2,7 @@
 IPV6_PREFIX=$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("::")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')
 IPV4_PREFIX=$(tr -d \" < /var/hcloud/public-ipv4)
 
-_log "freebsd-update fetch --not-running-from-cron | cat"
+_log "freebsd-update fetch --not-running-from-cron | head"
 _log "freebsd-update install --not-running-from-cron || echo No updates available"
 _log "pkg update"
 _log "pkg upgrade -y"
@@ -26,6 +26,7 @@ kern.racct.enable=1
 EOM
 
 _log install -v ./files/jail.conf /etc
+_log install -v ./files/devfs.rules /etc
 
 _log ex -s /etc/jail.conf <<EOM
 g/IPV6_PREFIX/s/IPV6_PREFIX/${IPV6_PREFIX}/p

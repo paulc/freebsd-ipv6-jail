@@ -63,6 +63,7 @@ _log "zfs snap zroot/jail/base@release"
 
 _log "printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /jail/base/etc/resolv.conf"
 _log "sysrc -f /jail/base/etc/rc.conf sendmail_enable=NONE syslogd_flags=-ss"
+_log "install -v -m 755 files/firstboot /jail/base/etc/rc.d"
 
 # Run updates inside /jail/base
 _log "mount -t devfs -o ruleset=2 devfs /jail/base/dev"
@@ -74,5 +75,11 @@ _log "umount -f /jail/base"
 
 _log "zfs snap zroot/jail/base@$(date +%s)"
 
-_log rm -f /firstboot
-_log reboot
+# Cosmetic tidy-up
+_log "uname -a > /etc/motd"
+_log "chsh -s /bin/sh root"
+_log "install -v files/dot.profile /root/.profile"
+_log "install -v files/dot.profile /usr/share/skel/"
+
+_log "rm -f /firstboot"
+_log "reboot"

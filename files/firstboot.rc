@@ -1,0 +1,96 @@
+#!/bin/sh
+
+# KEYWORD: firstboot
+# PROVIDE: firstboot
+# REQUIRE: NETWORKING
+# BEFORE: LOGIN
+
+# firstboot_enable="YES"
+# firstboot_ns="ns1 ns2..."
+# firstboot_check_net4="host"
+# firstboot_check_net6="host"
+# firstboot_update="YES"
+# firstboot_root_pk="ssh-ed25519..."
+# firstboot_user="user"
+# firstboot_user_pk="ssh-ed25519..."
+# firstboot_pkgs="pkg pkg..."
+# firstboot_cmd="cmd"
+
+. /etc/rc.subr
+
+: ${firstboot_enable:="NO"}
+
+name="firstboot"
+rcvar="firstboot_enable"
+start_cmd="firstboot_run"
+stop_cmd=":"
+
+firstboot_run()
+{
+    # Set NS first
+    if [ ! -z "${firstboot_ns}" ]; then
+        echo "Setting Nameservers:"
+        printf 'nameserver %s\n' ${firstboot_ns} | tee /etc/resolv.conf
+    fi
+    
+    # Test network
+    if [ ! -z "${firstboot_check_net4}" ]; then
+        echo "Checking IPv4 Network:"
+		_c=0
+		while [ $((_c=_c+1)) -lt 5 ] && !ping -t2 -o ${firstboot_check_net4} >dev/null 2>&1; do
+			sleep 1
+		done
+    fi
+
+    if [ ! -z "${firstboot_check_net6}" ]; then
+        echo "Checking IPv6 Network:"
+		_c=0
+		while [ $((_c=_c+1)) -lt 5 ] && ! ping6 -X2 -o ${firstboot_check_net6} >dev/null 2>&1; do
+			sleep 1
+		done
+    fi
+
+    # Update
+    if [ ${firstboot_update} = YES ]; then
+        freebsd-update fetch --not-running-from-cron | head
+        freebsd-update install --not-running-from-cron || echo No updates available
+    fi
+
+    # Packages
+    if [ ! -z "${firstboot_pkgs}" ]; then
+        # Bootstrap and update pkg
+        env ASSUME_ALWAYS_YES=YES pkg bootstrap -f | cat
+        env ASSUME_ALWAYS_YES=YES pkg update -f | cat
+        # Install packages
+        for package in ${firstboot_pkgs}; do
+            env ASSUME_ALWAYS_YES=YES pkg install ${package} </dev/null | cat
+        done
+    fi
+
+    # Root ssh key
+    if [ ! -z "${firstboot_root_pk}" ]; then
+        umask 077
+        mkdir /root/.ssh
+        echo ${firstboot_root_pk} | tee -a /root/.ssh/authorized_keys
+    fi
+
+    # User setup
+    if [ ! -z "${firstboot_user}" ]; then
+        umask 077
+        pw useradd -n ${firstboot_user} -m -s /bin/sh -h -
+        mkdir /home/${firstboot_user}/.ssh
+        if [ ! -z "${firstboot_user_pk}" ]; then
+            echo ${firstboot_user_pk} | tee -a /home/${firstboot_user}/.ssh/authorized_keys
+        fi
+        chown -R ${firstboot_user}:${firstboot_user} /home/${firstboot_user}/.ssh
+    fi
+
+    # Run firstboot command
+    if [ ! -z "${firstboot_cmd}" ]; then
+        /bin/sh -c "${firstboot_cmd}" 
+    fi
+}
+
+load_rc_config $name
+run_rc_command "$1"
+

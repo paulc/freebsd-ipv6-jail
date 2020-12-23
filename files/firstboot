@@ -51,7 +51,7 @@ firstboot_run()
     fi
 
     # Update
-    if [ ${firstboot_update} = YES ]; then
+    if [ "${firstboot_update}" = "YES" ]; then
         freebsd-update fetch --not-running-from-cron | head
         freebsd-update install --not-running-from-cron || echo No updates available
     fi

@@ -37,7 +37,7 @@ firstboot_run()
     if [ ! -z "${firstboot_check_net4}" ]; then
         echo "Checking IPv4 Network:"
 		_c=0
-		while [ $((_c=_c+1)) -lt 5 ] && !ping -t2 -o ${firstboot_check_net4} >dev/null 2>&1; do
+		while [ $((_c=_c+1)) -lt 5 ] && !ping -t2 -o ${firstboot_check_net4} >/dev/null 2>&1; do
 			sleep 1
 		done
     fi
@@ -45,7 +45,7 @@ firstboot_run()
     if [ ! -z "${firstboot_check_net6}" ]; then
         echo "Checking IPv6 Network:"
 		_c=0
-		while [ $((_c=_c+1)) -lt 5 ] && ! ping6 -X2 -o ${firstboot_check_net6} >dev/null 2>&1; do
+		while [ $((_c=_c+1)) -lt 5 ] && ! ping6 -X2 -o ${firstboot_check_net6} >/dev/null 2>&1; do
 			sleep 1
 		done
     fi

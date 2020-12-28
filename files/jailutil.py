@@ -60,8 +60,11 @@ class JailConf:
         return self.cmd("zfs","list","-H","-o","mountpoint",vol)
 
     def generate_addr(self,name):
-        a,b,c,d = struct.unpack("4H",hashlib.blake2b(name.encode('ascii'),digest_size=8).digest())
+        a,b,c,d = struct.unpack("4H",hashlib.blake2b(name.encode('utf8'),digest_size=8).digest())
         return "{}:{:x}:{:x}:{:x}:{:x}".format(self.prefix,a,b,c,d)
+
+    def generate_hash(self,name):
+        return hashlib.blake2b(name.encode('utf8'),digest_size=7).hexdigest()
 
     def get_latest_snapshot(self):
         out = self.cmd("zfs", "list", "-Hrt", "snap", "-s", "creation", "-o", "name", 
@@ -84,11 +87,12 @@ class Jail:
 
         # Jail params
         self.name = name
-        self.ipv6 = conf.generate_addr(name)
         self.conf = conf or JailConf()
+        self.ipv6 = self.conf.generate_addr(name)
         self.path = f"{self.conf.mountpoint}/{self.name}"
         self.zpath = f"{self.conf.zroot}/{self.name}"
-        self.epair = (f"epair_{self.name}_a",f"epair_{self.name}_b")
+        self.hash = self.conf.generate_hash(name)
+        self.epair = (f"{self.hash}A",f"{self.hash}B")
 
         # Useful commands
         self.ifconfig       = lambda *args: self.conf.cmd("ifconfig",*args)

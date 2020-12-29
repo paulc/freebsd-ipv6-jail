@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import functools,hashlib,ipaddress,re,struct,subprocess,sys
+import functools,hashlib,io,ipaddress,os,re,shutil,struct,subprocess,sys,tempfile
 
 class JailHost:
 
@@ -114,7 +114,7 @@ def check_running(f):
     def _wrapper(self,*args,**kwargs):
         if not self.running():
             raise ValueError(f"Jail not running: {self.name} ({self.hash})")
-        f(self,*args,**kwargs)
+        return f(self,*args,**kwargs)
     return _wrapper
 
 def check_not_running(f):
@@ -122,7 +122,7 @@ def check_not_running(f):
     def _wrapper(self,*args,**kwargs):
         if self.running():
             raise ValueError(f"Jail running: {self.name} ({self.hash})")
-        f(self,*args,**kwargs)
+        return f(self,*args,**kwargs)
     return _wrapper
 
 def check_fs_exists(f):
@@ -130,7 +130,7 @@ def check_fs_exists(f):
     def _wrapper(self,*args,**kwargs):
         if not self.check_fs():
             raise ValueError(f"Jail FS not found: {self.name} ({self.zpath})")
-        f(self,*args,**kwargs)
+        return f(self,*args,**kwargs)
     return _wrapper
 
 class Jail:
@@ -210,6 +210,40 @@ class Jail:
 
     def check_devfs(self):
         return self.check_cmd("ls",f"{self.path}/dev/zfs")
+
+    @check_fs_exists
+    def install(self,source,dest,mode="0755",user=None,group=None):
+        try:
+            if isinstance(source,str):
+                s = io.BytesIO(source.encode())
+            elif isinstance(source,bytes):
+                s = io.BytesIO(source)
+            elif hasattr(source,"read"):
+                s = source
+            else:
+                raise ValueError("Invalid source")
+
+            if isinstance(dest,str):
+                d = open(f"{self.path}{dest}","wb")
+                os.chmod(f"{self.path}{dest}",int(mode,8))
+                if user or group:
+                    shutil.chown(f"{self.path}{dest}",user,group)
+            elif isinstance(dest,int):
+                d = os.fdopen(dest,"wb")
+            else:
+                raise ValueError("Invalid destination")
+
+            d.write(s.read())
+
+        finally:
+            s.close()
+            d.close()
+
+    @check_fs_exists
+    def mkstemp(self,suffix=None,prefix=None,dir=None,text=False):
+        jdir = f"{self.path}/{dir}" if dir else f"{self.path}/tmp"
+        fd,path = tempfile.mkstemp(suffix,prefix,jdir,text)
+        return (fd, path[len(self.path):])
 
     @check_fs_exists
     def configure(self):

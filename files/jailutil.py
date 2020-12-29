@@ -2,7 +2,7 @@
 
 import hashlib,ipaddress,re,struct,subprocess,sys
 
-class JailConf:
+class JailHost:
 
     DEFAULT_PARAMS = {
             "allow.set_hostname":   False,
@@ -80,31 +80,32 @@ class JailConf:
 
 class Jail:
 
-    def __init__(self,name,conf=None):
+    def __init__(self,name,host=None):
 
-        # Check name cane be encoded as ascii
-        name.encode("ascii")
+        # Check name can be encoded as ascii
+        # name.encode("ascii")
 
         # Jail params
         self.name = name
-        self.conf = conf or JailConf()
-        self.ipv6 = self.conf.generate_addr(name)
-        self.path = f"{self.conf.mountpoint}/{self.name}"
-        self.zpath = f"{self.conf.zroot}/{self.name}"
-        self.hash = self.conf.generate_hash(name)
+        self.host = host or JailHost()
+        self.ipv6 = self.host.generate_addr(name)
+        self.hash = self.host.generate_hash(name)
+        self.path = f"{self.host.mountpoint}/{self.hash}"
+        self.zpath = f"{self.host.zroot}/{self.hash}"
         self.epair = (f"{self.hash}A",f"{self.hash}B")
 
         # Useful commands
-        self.ifconfig       = lambda *args: self.conf.cmd("ifconfig",*args)
-        self.route6         = lambda *args: self.conf.cmd("route","-6",*args)
-        self.jail_route6    = lambda *args: self.conf.cmd("jexec",self.name,"route","-6",*args)
-        self.jexec          = lambda *args: self.conf.cmd("jexec",self.name,*args)
-        self.sysrc          = lambda *args: self.conf.cmd("sysrc","-R",self.path,*args)
-        self.zfs_clone      = lambda *args: self.conf.cmd("zfs","clone",*args)
-        self.zfs_destroy    = lambda *args: self.conf.cmd("zfs","destroy",self.zpath)
-        self.jail_create    = lambda *args: self.conf.cmd("jail","-cv",*args)
-        self.jail_stop      = lambda *args: self.conf.cmd("jail","-Rv",self.name)
-        self.umount_devfs   = lambda *args: self.conf.cmd("umount",f"{self.path}/dev")
+        self.ifconfig       = lambda *args: self.host.cmd("ifconfig",*args)
+        self.route6         = lambda *args: self.host.cmd("route","-6",*args)
+        self.jail_route6    = lambda *args: self.host.cmd("jexec",self.hash,"route","-6",*args)
+        self.jexec          = lambda *args: self.host.cmd("jexec",self.hash,*args)
+        self.sysrc          = lambda *args: self.host.cmd("sysrc","-R",self.path,*args)
+        self.zfs_clone      = lambda *args: self.host.cmd("zfs","clone",*args)
+        self.zfs_destroy    = lambda *args: self.host.cmd("zfs","destroy",self.zpath)
+        self.zfs_set        = lambda *args: self.host.cmd("zfs","set",*args,self.zpath)
+        self.jail_create    = lambda *args: self.host.cmd("jail","-cv",*args)
+        self.jail_stop      = lambda *args: self.host.cmd("jail","-Rv",self.hash)
+        self.umount_devfs   = lambda *args: self.host.cmd("umount",f"{self.path}/dev")
 
     def create_epair(self):
         epair = self.ifconfig("epair","create")[:-1]
@@ -112,11 +113,11 @@ class Jail:
         self.ifconfig(f"{epair}a","name",epair_host)
         self.ifconfig(f"{epair}b","name",epair_jail)
         self.ifconfig(epair_host,"inet6","auto_linklocal","up")
-        self.ifconfig(self.conf.bridge,"addm",epair_host,
+        self.ifconfig(self.host.bridge,"addm",epair_host,
                                        "private",epair_host)
 
     def remove_vnet(self):
-        self.ifconfig(self.epair[1],"-vnet",self.name)
+        self.ifconfig(self.epair[1],"-vnet",self.hash)
 
     def destroy_epair(self):
         self.ifconfig(self.epair[0],"destroy")
@@ -130,38 +131,69 @@ class Jail:
         epair_host,epair_jail = self.epair
         lladdr_host,lladdr_jail = self.get_lladdr()
         self.route6("add",self.ipv6,f"{lladdr_jail}%{epair_host}")
-        self.jail_route6("add",self.conf.hostaddr,f"{lladdr_host}%{epair_jail}")
+        self.jail_route6("add",self.host.hostaddr,f"{lladdr_host}%{epair_jail}")
 
     def create_fs(self):
-        self.zfs_clone(self.conf.get_latest_snapshot(),self.zpath)
+        self.zfs_clone(self.host.get_latest_snapshot(),self.zpath)
+        self.zfs_set(f"jail:name={self.name}",f"jail:ipv6={self.ipv6}")
 
     def destroy_fs(self):
-        self.zfs_destroy(f"{self.conf.zroot}/{self.name}")
+        self.zfs_destroy(self.zpath)
+
+    def check_cmd(self,*args):
+        try:
+            self.host.cmd(*args)
+            return True
+        except subprocess.CalledProcessError:
+            return False
+
+    def running(self):
+        return self.check_cmd("jls","-Nj",self.hash)
+
+    def check_fs(self):
+        return self.check_cmd("zfs","list",self.zpath)
+
+    def check_epair(self):
+        return self.check_cmd("ifconfig",self.epair[0])
+
+    def check_devfs(self):
+        return self.check_cmd("ls",f"{self.path}/dev/zfs")
 
     def configure(self):
         epair_host,epair_jail = self.epair
-        self.sysrc("sendmail_enable=NONE",
-                   "syslogd_flags=-ss",
-                   "ip6addrctl_policy=ipv6_prefer",
-                   f"ifconfig_{epair_jail}_ipv6=inet6 {self.ipv6}/64",
+        self.sysrc(f"ifconfig_{epair_jail}_ipv6=inet6 {self.ipv6}/64",
                    f"ipv6_defaultrouter=fe80::1%{epair_jail}")
 
+    def clean(self):
+        self.stop()
+        if self.check_devfs():
+            self.umount_devfs()
+        if self.check_fs():
+            self.destroy_fs()
+        if self.check_epair():
+            self.destroy_epair()
+
     def start(self):
-        params = self.conf.DEFAULT_PARAMS.copy()
-        params["name"] = self.name
-        params["path"] = self.path
-        params["vnet.interface"] = self.epair[1]
-        params["host.hostname"] = self.name
-        self.create_epair()
-        self.jail_create(*[f"{k}={v}" for k,v in params.items()])
-        self.local_route()
+        if not self.running():
+            params = self.host.DEFAULT_PARAMS.copy()
+            params["name"] = self.hash
+            params["path"] = self.path
+            params["vnet.interface"] = self.epair[1]
+            params["host.hostname"] = self.name
+            self.create_epair()
+            self.jail_create(*[f"{k}={v}" for k,v in params.items()])
+            self.local_route()
+        else:
+            raise ValueError(f"Jail running: {self.name} ({self.hash})")
 
     def stop(self):
-        # XXX Check if running?
-        self.remove_vnet()
-        self.jail_stop()
-        self.umount_devfs()
-        self.destroy_epair()
+        if self.running():
+            self.remove_vnet()
+            self.jail_stop()
+            self.umount_devfs()
+            self.destroy_epair()
+        else:
+            raise ValueError(f"Jail not running: {self.name} ({self.hash})")
 
     def run(self):
         self.create_fs()

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import functools,hashlib,io,ipaddress,os,re,shutil,struct,subprocess,sys,tempfile
+import functools,hashlib,io,ipaddress,os,re,shutil,struct,subprocess,sys,tempfile,time
 
 class JailHost:
 
@@ -24,15 +24,22 @@ class JailHost:
             "exec.start":           "/bin/sh /etc/rc",
     }
 
-    def __init__(self,hostipv6=None,prefix=None,gateway=None,
+    def __init__(self,hostipv6=None,prefix=None,gateway=None,base="base",
                       zroot="zroot/jail",bridge="bridge0",debug=False):
         self.debug = debug
         self.zroot = zroot
         self.bridge = bridge
+        self.base = base
         self.hostipv6 = hostipv6 or self.host_ipv6()
         self.gateway = gateway or self.host_gateway()
         self.prefix = prefix or ipaddress.IPv6Address(self.hostipv6).exploded[:19]
         self.mountpoint = self.get_mountpoint(self.zroot)
+
+        if not self.check_cmd("zfs","list",f"{self.zroot}/{self.base}"):
+            raise ValueError(f"base not found: {self.zroot}/{self.base}")
+
+        if not self.check_cmd("ifconfig",self.bridge):
+            raise ValueError(f"bridge not found: {self.bridge}")
 
     def cmd(self,*args):
         try:
@@ -50,6 +57,13 @@ class JailHost:
                 if err:
                     print("\n".join([f"   ! {l}" for l in err.split("\n")]))
             raise
+
+    def check_cmd(self,*args):
+        try:
+            self.cmd(*args)
+            return True
+        except subprocess.CalledProcessError:
+            return False
 
     def host_ipv6(self):
         (default_if,) = re.search("interface: (.*)",
@@ -93,11 +107,30 @@ class JailHost:
 
     def get_latest_snapshot(self):
         out = self.cmd("zfs", "list", "-Hrt", "snap", "-s", "creation", "-o", "name", 
-                              f"{self.zroot}/base")
+                              f"{self.zroot}/{self.base}")
         if out:
             return out.split("\n")[-1]
         else:
-            raise ValueError(f"No snapshots found: {path}")
+            raise ValueError(f"No snapshots found: {self.zroot}/{self.base}")
+
+    def snapshot_base(self):
+        self.cmd("zfs","snapshot",f"{self.zroot}/{self.base}@{time.strftime('%s')}")
+
+    def chroot_base(self,cmds=None,snapshot=True):
+        self.cmd("mount","-t","devfs","-o","ruleset=2","devfs",f"{self.mountpoint}/{self.base}/dev")
+        if cmds:
+            subprocess.run(["chroot",f"{self.mountpoint}/{self.base}","/bin/sh"],
+                    input=b"\n".join([c.encode() for c in cmds]))
+        else:
+            subprocess.run(["chroot",f"{self.mountpoint}/{self.base}","/bin/sh"])
+        self.cmd("umount","-f",f"{self.mountpoint}/{self.base}/dev")
+        if snapshot:
+            self.snapshot_base()
+
+    def get_jails(self):
+        out = self.cmd("zfs","list","-r","-H","-o","jail:base,jail:name",self.zroot)
+        return [self.jail(name) for (base,name) in 
+                        re.findall("(.*)\t(.*)",out) if base == self.base]
 
     def jail(self,name):
         return Jail(name,self)
@@ -150,12 +183,10 @@ class Jail:
         # Useful commands
         self.ifconfig       = lambda *args: self.host.cmd("ifconfig",*args)
         self.route6         = lambda *args: self.host.cmd("route","-6",*args)
-        self.jail_route6    = lambda *args: self.host.cmd("jexec",self.hash,"route","-6",*args)
-        self.jexec          = lambda *args: self.host.cmd("jexec",self.hash,*args)
-        self.sysrc          = lambda *args: self.host.cmd("sysrc","-R",self.path,*args)
+        self.jail_route6    = lambda *args: self.host.cmd("jexec","-l",self.hash,"route","-6",*args)
         self.zfs_clone      = lambda *args: self.host.cmd("zfs","clone",*args)
         self.zfs_set        = lambda *args: self.host.cmd("zfs","set",*args,self.zpath)
-        self.jail_create    = lambda *args: self.host.cmd("jail","-cv",*args)
+        self.jail_start     = lambda *args: self.host.cmd("jail","-cv",*args)
         self.jail_stop      = lambda : self.host.cmd("jail","-Rv",self.hash)
         self.umount_devfs   = lambda : self.host.cmd("umount",f"{self.path}/dev")
         self.osrelease      = lambda : self.host.cmd("uname","-r")
@@ -186,30 +217,28 @@ class Jail:
         self.route6("add",self.ipv6,f"{lladdr_jail}%{epair_host}")
         self.jail_route6("add",self.host.hostipv6,f"{lladdr_host}%{epair_jail}")
 
-    def create_fs(self):
-        if self.check_fs():
-            raise ValueError(f"Jail FS exists: {self.name} ({self.zpath})")
-        self.zfs_clone(self.host.get_latest_snapshot(),self.zpath)
-        self.zfs_set(f"jail:name={self.name}",f"jail:ipv6={self.ipv6}")
-
-    def check_cmd(self,*args):
-        try:
-            self.host.cmd(*args)
-            return True
-        except subprocess.CalledProcessError:
-            return False
-
     def running(self):
-        return self.check_cmd("jls","-Nj",self.hash)
+        return self.host.check_cmd("jls","-Nj",self.hash)
 
     def check_fs(self):
-        return self.check_cmd("zfs","list",self.zpath)
+        return self.host.check_cmd("zfs","list",self.zpath)
 
     def check_epair(self):
-        return self.check_cmd("ifconfig",self.epair[HOST])
+        return self.host.check_cmd("ifconfig",self.epair[HOST])
 
     def check_devfs(self):
-        return self.check_cmd("ls",f"{self.path}/dev/zfs")
+        return self.host.check_cmd("ls",f"{self.path}/dev/zfs")
+
+    @check_running
+    def jexec(self,*args):
+        if args:
+            return self.host.cmd("jexec","-l",self.hash,*args)
+        else:
+            return subprocess.run(["jexec","-l",self.hash,"/bin/sh"])
+
+    @check_fs_exists
+    def sysrc(self,*args):
+        return self.host.cmd("sysrc","-R",self.path,*args)
 
     @check_fs_exists
     def install(self,source,dest,mode="0755",user=None,group=None):
@@ -233,7 +262,7 @@ class Jail:
             else:
                 raise ValueError("Invalid destination")
 
-            d.write(s.read())
+            return d.write(s.read())
 
         finally:
             s.close()
@@ -244,6 +273,14 @@ class Jail:
         jdir = f"{self.path}/{dir}" if dir else f"{self.path}/tmp"
         fd,path = tempfile.mkstemp(suffix,prefix,jdir,text)
         return (fd, path[len(self.path):])
+
+    def create_fs(self):
+        if self.check_fs():
+            raise ValueError(f"Jail FS exists: {self.name} ({self.zpath})")
+        self.zfs_clone(self.host.get_latest_snapshot(),self.zpath)
+        self.zfs_set(f"jail:name={self.name}",
+                     f"jail:ipv6={self.ipv6}",
+                     f"jail:base={self.host.base}")
 
     @check_fs_exists
     def configure(self):
@@ -262,7 +299,7 @@ class Jail:
         params["host.hostname"] = self.name
         params["osrelease"] = self.osrelease()
         self.create_epair()
-        self.jail_create(*[f"{k}={v}" for k,v in params.items()])
+        self.jail_start(*[f"{k}={v}" for k,v in params.items()])
         self.local_route()
 
     @check_running
@@ -283,18 +320,185 @@ class Jail:
         self.configure()
         self.start()
 
-    def kill(self):
-        self.stop()
+    def remove(self,force=False):
+        if self.running():
+            if force:
+                self.stop()
+            else:
+                raise ValueError(f"Jail running: {self.name} ({self.hash})")
         self.destroy_fs()
 
-    def cleanup(self,destroy_fs=False):
-        if self.running():
+    def cleanup(self,force=False,destroy_fs=False):
+        if self.running() and force:
             self.stop()
+        else:
+            raise ValueError(f"Jail running: {self.name} ({self.hash})")
         if self.check_devfs():
             self.umount_devfs()
         if self.check_epair():
             self.destroy_epair()
         if self.check_fs() and destroy_fs:
             self.destroy_fs()
+
+if __name__ == "__main__":
+
+    import click,tabulate
+
+    @click.group()
+    @click.option("--debug",is_flag=True)
+    @click.option("--base")
+    @click.pass_context
+    def cli(ctx,debug,base):
+        try:
+            ctx.ensure_object(dict)
+            args = { "debug": debug }
+            if base:
+                args["base"] = base
+            ctx.obj["host"] = JailHost(**args)
+        except subprocess.CalledProcessError as e:
+            raise click.ClickException(f"{e} :: {e.stderr.strip()}")
+        except ValueError as e:
+            raise click.ClickException(f"{e}")
+
+    @cli.command()
+    @click.option("--name",required=True)
+    @click.pass_context
+    def create(ctx,name):
+        try:
+            jail = ctx.obj['host'].jail(name)
+            jail.create_fs()
+            jail.configure()
+            click.secho(f"Created jail: {jail.name} (id={jail.hash})",fg="green")
+        except subprocess.CalledProcessError as e:
+            raise click.ClickException(f"{e} :: {e.stderr.strip()}")
+        except ValueError as e:
+            raise click.ClickException(f"{e}")
+
+    @cli.command()
+    @click.option("--name",required=True)
+    @click.pass_context
+    def run(ctx,name):
+        try:
+            jail = ctx.obj['host'].jail(name)
+            jail.run()
+            click.secho(f"Started jail: {jail.name} (id={jail.hash} ipv6={jail.ipv6})",fg="green")
+        except subprocess.CalledProcessError as e:
+            raise click.ClickException(f"{e} :: {e.stderr.strip()}")
+        except ValueError as e:
+            raise click.ClickException(f"{e}")
+
+    @cli.command()
+    @click.option("--name",required=True)
+    @click.pass_context
+    def start(ctx,name):
+        try:
+            jail = ctx.obj['host'].jail(name)
+            jail.start()
+            click.secho(f"Started jail: {jail.name} (id={jail.hash} ipv6={jail.ipv6})",fg="green")
+        except subprocess.CalledProcessError as e:
+            raise click.ClickException(f"{e} :: {e.stderr.strip()}")
+        except ValueError as e:
+            raise click.ClickException(f"{e}")
+
+    @cli.command()
+    @click.option("--name",required=True)
+    @click.pass_context
+    def stop(ctx,name):
+        try:
+            jail = ctx.obj['host'].jail(name)
+            jail.stop()
+            click.secho(f"Stopped jail: {jail.name} ({jail.hash})",fg="green")
+        except subprocess.CalledProcessError as e:
+            raise click.ClickException(f"{e} :: {e.stderr.strip()}")
+        except ValueError as e:
+            raise click.ClickException(f"{e}")
+
+    @cli.command()
+    @click.option("--name",required=True)
+    @click.option("--force",is_flag=True)
+    @click.pass_context
+    def remove(ctx,name,force):
+        try:
+            jail = ctx.obj['host'].jail(name)
+            jail.remove(force=force)
+            click.secho(f"Removed jail: {jail.name} ({jail.hash})",fg="green")
+        except subprocess.CalledProcessError as e:
+            raise click.ClickException(f"{e} :: {e.stderr.strip()}")
+        except ValueError as e:
+            raise click.ClickException(f"{e}")
+
+    @cli.command()
+    @click.pass_context
+    def list(ctx):
+        try:
+            jails = [dict(name=j.name,hash=j.hash,ipv6=j.ipv6,running=j.running()) 
+                            for j in ctx.obj['host'].get_jails()]
+            click.echo(tabulate.tabulate(jails,headers="keys"))
+        except subprocess.CalledProcessError as e:
+            raise click.ClickException(f"{e} :: {e.stderr.strip()}")
+        except ValueError as e:
+            raise click.ClickException(f"{e}")
+
+    @cli.command()
+    @click.option("--name",required=True)
+    @click.argument("args", nargs=-1)
+    @click.pass_context
+    def sysrc(ctx,name,args):
+        try:
+            jail = ctx.obj['host'].jail(name)
+            click.secho(f"sysrc: {jail.name} ({jail.hash})",fg="yellow")
+            if args:
+                click.secho(jail.sysrc("-v",*args),fg="green")
+            else:
+                click.secho(jail.sysrc("-a","-v"),fg="green")
+        except subprocess.CalledProcessError as e:
+            raise click.ClickException(f"{e} :: {e.stderr.strip()}")
+        except ValueError as e:
+            raise click.ClickException(f"{e}")
+
+    @cli.command()
+    @click.option("--name",required=True)
+    @click.argument("args", nargs=-1)
+    @click.pass_context
+    def jexec(ctx,name,args):
+        try:
+            jail = ctx.obj['host'].jail(name)
+            if args:
+                click.secho(jail.jexec(*args),fg="green")
+            else:
+                jail.jexec()
+        except subprocess.CalledProcessError as e:
+            raise click.ClickException(f"{e} :: {e.stderr.strip()}")
+        except ValueError as e:
+            raise click.ClickException(f"{e}")
+
+    @cli.command()
+    @click.option("--name",required=True)
+    @click.option("--source",type=click.File('rb'),required=True)
+    @click.option("--dest")
+    @click.option("--mktemp",is_flag=True)
+    @click.option("--mode",default="0755")
+    @click.option("--user")
+    @click.option("--group")
+    @click.pass_context
+    def install(ctx,name,source,dest,mktemp,mode,user,group):
+        try:
+            jail = ctx.obj['host'].jail(name)
+            if dest:
+                n = jail.install(source,dest,mode,user,group)
+                click.secho(f"Installed to {dest} ({n} bytes)")
+            elif mktemp:
+                fd,path = jail.mkstemp(prefix="tmp_")
+                n = jail.install(source,fd)
+                click.secho(f"Installed to {path} ({n} bytes)")
+            else:
+                raise ValueError("Must specify either `--dest` or `--mktemp`")
+        except subprocess.CalledProcessError as e:
+            raise click.ClickException(f"{e} :: {e.stderr.strip()}")
+        except ValueError as e:
+            raise click.ClickException(f"{e}")
+
+    cli()
+
 
 

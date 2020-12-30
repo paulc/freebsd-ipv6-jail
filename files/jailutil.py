@@ -249,7 +249,8 @@ class Jail:
     def configure(self):
         epair_host,epair_jail = self.epair
         self.sysrc(f"ifconfig_{epair_jail}_ipv6=inet6 {self.ipv6}/64",
-                   f"ipv6_defaultrouter={self.gateway}")
+                   f"ipv6_defaultrouter={self.gateway}",
+                   f"ifconfig_lo0_ipv6=inet6 up")
 
     @check_fs_exists
     @check_not_running

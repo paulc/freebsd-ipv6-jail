@@ -231,10 +231,7 @@ class Jail:
 
     @check_running
     def jexec(self,*args):
-        if args:
-            return self.host.cmd("jexec","-l",self.hash,*args)
-        else:
-            return subprocess.run(["jexec","-l",self.hash,"/bin/sh"])
+        return subprocess.run(["jexec","-l",self.hash,*args])
 
     @check_fs_exists
     def sysrc(self,*args):
@@ -311,7 +308,7 @@ class Jail:
 
     @check_fs_exists
     def destroy_fs(self):
-        self.host.cmd("zfs","destroy",self.zpath)
+        self.host.cmd("zfs","destroy","-f",self.zpath)
 
     @check_not_running
     def run(self):
@@ -361,9 +358,9 @@ if __name__ == "__main__":
             raise click.ClickException(f"{e}")
 
     @cli.command()
-    @click.option("--name",required=True)
+    @click.argument("name",nargs=1)
     @click.pass_context
-    def create(ctx,name):
+    def new(ctx,name):
         try:
             jail = ctx.obj['host'].jail(name)
             jail.create_fs()
@@ -375,7 +372,7 @@ if __name__ == "__main__":
             raise click.ClickException(f"{e}")
 
     @cli.command()
-    @click.option("--name",required=True)
+    @click.argument("name",nargs=1)
     @click.pass_context
     def run(ctx,name):
         try:
@@ -388,7 +385,7 @@ if __name__ == "__main__":
             raise click.ClickException(f"{e}")
 
     @cli.command()
-    @click.option("--name",required=True)
+    @click.argument("name",nargs=1)
     @click.pass_context
     def start(ctx,name):
         try:
@@ -401,7 +398,7 @@ if __name__ == "__main__":
             raise click.ClickException(f"{e}")
 
     @cli.command()
-    @click.option("--name",required=True)
+    @click.argument("name",nargs=1)
     @click.pass_context
     def stop(ctx,name):
         try:
@@ -414,8 +411,8 @@ if __name__ == "__main__":
             raise click.ClickException(f"{e}")
 
     @cli.command()
-    @click.option("--name",required=True)
     @click.option("--force",is_flag=True)
+    @click.argument("name",nargs=1)
     @click.pass_context
     def remove(ctx,name,force):
         try:
@@ -440,7 +437,7 @@ if __name__ == "__main__":
             raise click.ClickException(f"{e}")
 
     @cli.command()
-    @click.option("--name",required=True)
+    @click.argument("name",nargs=1)
     @click.argument("args", nargs=-1)
     @click.pass_context
     def sysrc(ctx,name,args):
@@ -457,23 +454,20 @@ if __name__ == "__main__":
             raise click.ClickException(f"{e}")
 
     @cli.command()
-    @click.option("--name",required=True)
+    @click.argument("name",nargs=1)
     @click.argument("args", nargs=-1)
     @click.pass_context
     def jexec(ctx,name,args):
         try:
             jail = ctx.obj['host'].jail(name)
-            if args:
-                click.secho(jail.jexec(*args),fg="green")
-            else:
-                jail.jexec()
+            jail.jexec(*args)
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"{e} :: {e.stderr.strip()}")
         except ValueError as e:
             raise click.ClickException(f"{e}")
 
     @cli.command()
-    @click.option("--name",required=True)
+    @click.argument("name",nargs=1)
     @click.option("--source",type=click.File('rb'),required=True)
     @click.option("--dest")
     @click.option("--mktemp",is_flag=True)

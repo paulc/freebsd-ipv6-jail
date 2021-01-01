@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import code,functools,hashlib,io,ipaddress,os,re,shutil,struct,subprocess,sys,tempfile,time
+import base64,code,functools,hashlib,io,ipaddress,os,re,shutil,struct,subprocess,sys,tempfile,time
 
 class JailHost:
 
@@ -97,7 +97,9 @@ class JailHost:
             return self.gateway
 
     def generate_hash(self,name):
-        return hashlib.blake2b(name.encode("utf8"),digest_size=7).hexdigest()
+        return base64.b32encode(
+                    hashlib.blake2b(name.encode("utf8"),digest_size=8).digest()
+               ).lower().rstrip(b"=").decode()
 
     def name_from_hash(self,jail_hash):
         try:
@@ -150,7 +152,7 @@ def check_running(f):
     @functools.wraps(f)
     def _wrapper(self,*args,**kwargs):
         if not self.is_running():
-            raise ValueError(f"Jail not running: {self.name} ({self.hash})")
+            raise ValueError(f"Jail not running: {self.name} ({self.jname})")
         return f(self,*args,**kwargs)
     return _wrapper
 
@@ -158,7 +160,7 @@ def check_not_running(f):
     @functools.wraps(f)
     def _wrapper(self,*args,**kwargs):
         if self.is_running():
-            raise ValueError(f"Jail running: {self.name} ({self.hash})")
+            raise ValueError(f"Jail running: {self.name} ({self.jname})")
         return f(self,*args,**kwargs)
     return _wrapper
 
@@ -179,6 +181,7 @@ class Jail:
         self.host = host or JailHost()
         self.hash = self.host.generate_hash(name)
         self.ipv6 = self.host.generate_addr(name)
+        self.jname = f"j_{self.hash}"
         self.path = f"{self.host.mountpoint}/{self.hash}"
         self.zpath = f"{self.host.zroot}/{self.hash}"
         self.epair = (f"{self.hash}A",f"{self.hash}B")
@@ -187,11 +190,11 @@ class Jail:
         # Useful commands
         self.ifconfig       = lambda *args: self.host.cmd("ifconfig",*args)
         self.route6         = lambda *args: self.host.cmd("route","-6",*args)
-        self.jail_route6    = lambda *args: self.host.cmd("jexec","-l",self.hash,"route","-6",*args)
+        self.jail_route6    = lambda *args: self.host.cmd("jexec","-l",self.jname,"route","-6",*args)
         self.zfs_clone      = lambda *args: self.host.cmd("zfs","clone",*args)
         self.zfs_set        = lambda *args: self.host.cmd("zfs","set",*args,self.zpath)
         self.jail_start     = lambda *args: self.host.cmd("jail","-cv",*args)
-        self.jail_stop      = lambda : self.host.cmd("jail","-Rv",self.hash)
+        self.jail_stop      = lambda : self.host.cmd("jail","-Rv",self.jname)
         self.umount_devfs   = lambda : self.host.cmd("umount",f"{self.path}/dev")
         self.osrelease      = lambda : self.host.cmd("uname","-r")
 
@@ -209,7 +212,7 @@ class Jail:
             self.ifconfig(self.host.bridge,"addm",epair_host)
 
     def remove_vnet(self):
-        self.ifconfig(self.epair[JAIL],"-vnet",self.hash)
+        self.ifconfig(self.epair[JAIL],"-vnet",self.jname)
 
     def destroy_epair(self):
         self.ifconfig(self.epair[HOST],"destroy")
@@ -226,7 +229,7 @@ class Jail:
         self.jail_route6("add",self.host.hostipv6,f"{lladdr_host}%{epair_jail}")
 
     def is_running(self):
-        return self.host.check_cmd("jls","-Nj",self.hash)
+        return self.host.check_cmd("jls","-Nj",self.jname)
 
     def check_fs(self):
         return self.host.check_cmd("zfs","list",self.zpath)
@@ -240,13 +243,13 @@ class Jail:
 
     def is_vnet(self):
         try:
-            return self.host.cmd("jls","-j",self.hash,"vnet") == "1"
+            return self.host.cmd("jls","-j",self.jname,"vnet") == "1"
         except subprocess.CalledProcessError:
             return False
 
     @check_running
     def jexec(self,*args):
-        return subprocess.run(["jexec","-l",self.hash,*args])
+        return subprocess.run(["jexec","-l",self.jname,*args])
 
     @check_fs_exists
     def sysrc(self,*args):
@@ -321,7 +324,7 @@ class Jail:
     @check_not_running
     def start(self,private=True,jail_params=None):
         params = self.host.DEFAULT_PARAMS.copy()
-        params["name"] = self.hash
+        params["name"] = self.jname
         params["path"] = self.path
         params["vnet.interface"] = self.epair[JAIL]
         params["host.hostname"] = self.name
@@ -348,7 +351,7 @@ class Jail:
             if force:
                 self.stop()
             else:
-                raise ValueError(f"Jail running: {self.name} ({self.hash})")
+                raise ValueError(f"Jail running: {self.name} ({self.jname})")
         if self.check_devfs():
             self.umount_devfs()
         if self.check_epair():
@@ -359,7 +362,7 @@ class Jail:
         if self.is_running() and force:
             self.stop()
         else:
-            raise ValueError(f"Jail running: {self.name} ({self.hash})")
+            raise ValueError(f"Jail running: {self.name} ({self.jname})")
         if self.check_devfs():
             self.umount_devfs()
         if self.check_epair():
@@ -394,7 +397,7 @@ if __name__ == "__main__":
         try:
             jail = ctx.obj["host"].jail(name)
             jail.create_fs()
-            click.secho(f"Created jail: {jail.name} (id={jail.hash})",fg="green")
+            click.secho(f"Created jail: {jail.name} (id={jail.jname})",fg="green")
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"{e} :: {e.stderr.strip()}")
         except ValueError as e:
@@ -415,7 +418,7 @@ if __name__ == "__main__":
             if fastboot:
                 jail_params["exec.start"] = jail.fastboot_script()
             jail.start(private=private,jail_params=jail_params)
-            click.secho(f"Started jail: {jail.name} (id={jail.hash} ipv6={jail.ipv6})",fg="green")
+            click.secho(f"Started jail: {jail.name} (id={jail.jname} ipv6={jail.ipv6})",fg="green")
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"{e} :: {e.stderr.strip()}")
         except ValueError as e:
@@ -434,7 +437,7 @@ if __name__ == "__main__":
             if fastboot:
                 jail_params["exec.start"] = jail.fastboot_script()
             jail.start(private=private,jail_params=jail_params)
-            click.secho(f"Started jail: {jail.name} (id={jail.hash} ipv6={jail.ipv6})",fg="green")
+            click.secho(f"Started jail: {jail.name} (id={jail.jname} ipv6={jail.ipv6})",fg="green")
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"{e} :: {e.stderr.strip()}")
         except ValueError as e:
@@ -447,7 +450,7 @@ if __name__ == "__main__":
         try:
             jail = ctx.obj["host"].jail(name)
             jail.stop()
-            click.secho(f"Stopped jail: {jail.name} ({jail.hash})",fg="green")
+            click.secho(f"Stopped jail: {jail.name} ({jail.jname})",fg="green")
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"{e} :: {e.stderr.strip()}")
         except ValueError as e:
@@ -461,7 +464,7 @@ if __name__ == "__main__":
         try:
             jail = ctx.obj["host"].jail(name)
             jail.remove(force=force)
-            click.secho(f"Removed jail: {jail.name} ({jail.hash})",fg="green")
+            click.secho(f"Removed jail: {jail.name} ({jail.jname})",fg="green")
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"{e} :: {e.stderr.strip()}")
         except ValueError as e:
@@ -471,7 +474,7 @@ if __name__ == "__main__":
     @click.pass_context
     def list(ctx):
         try:
-            jails = [dict(name=j.name,hash=j.hash,ipv6=j.ipv6,running=j.is_running()) 
+            jails = [dict(name=j.name,jname=j.jname,ipv6=j.ipv6,running=j.is_running()) 
                             for j in ctx.obj["host"].get_jails()]
             click.echo(tabulate.tabulate(jails,headers="keys"))
         except subprocess.CalledProcessError as e:
@@ -486,7 +489,7 @@ if __name__ == "__main__":
     def sysrc(ctx,name,args):
         try:
             jail = ctx.obj["host"].jail(name)
-            click.secho(f"sysrc: {jail.name} ({jail.hash})",fg="yellow")
+            click.secho(f"sysrc: {jail.name} ({jail.jname})",fg="yellow")
             if args:
                 click.secho(jail.sysrc("-v",*args),fg="green")
             else:

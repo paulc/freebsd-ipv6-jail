@@ -85,7 +85,7 @@ class JailHost:
         return self.cmd("zfs","list","-H","-o","mountpoint",vol)
 
     def generate_addr(self,name):
-        a,b,c,d = struct.unpack("4H",hashlib.blake2b(name.encode('utf8'),digest_size=8).digest())
+        a,b,c,d = struct.unpack("4H",hashlib.blake2b(name.encode("utf8"),digest_size=8).digest())
         return "{}:{:x}:{:x}:{:x}:{:x}".format(self.prefix,a,b,c,d)
 
     def generate_gateway(self,interface):
@@ -97,7 +97,7 @@ class JailHost:
             return self.gateway
 
     def generate_hash(self,name):
-        return hashlib.blake2b(name.encode('utf8'),digest_size=7).hexdigest()
+        return hashlib.blake2b(name.encode("utf8"),digest_size=7).hexdigest()
 
     def name_from_hash(self,jail_hash):
         try:
@@ -132,7 +132,7 @@ class JailHost:
             self.snapshot_base()
 
     def get_jails(self):
-        out = self.cmd("zfs","list","-r","-H","-o","jail:base,jail:name",self.zroot)
+        out = self.cmd("zfs","list","-r","-H","-o","jail:base,jail:name","-s","jail:name",self.zroot)
         return [self.jail(name) for (base,name) in 
                         re.findall("(.*)\t(.*)",out) if base == self.base]
 
@@ -196,6 +196,8 @@ class Jail:
         self.osrelease      = lambda : self.host.cmd("uname","-r")
 
     def create_epair(self,private=True):
+        if self.check_epair():
+            self.destroy_epair()
         epair = self.ifconfig("epair","create")[:-1]
         epair_host,epair_jail = self.epair
         self.ifconfig(f"{epair}a","name",epair_host)
@@ -284,6 +286,21 @@ class Jail:
         fd,path = tempfile.mkstemp(suffix,prefix,jdir,text)
         return (fd, path[len(self.path):])
 
+    def fastboot_script(self):
+        epair_host,epair_jail = self.epair
+        return f"""
+            ifconfig lo0 inet6 up auto_linklocal;
+            ifconfig {epair_jail} inet6 {self.ipv6} auto_linklocal;
+            route -6 add default fe80::1%{epair_jail};
+            route -6 add fe80:: -prefixlen 10 ::1 -reject;
+            route -6 add ::ffff:0.0.0.0 -prefixlen 96 ::1 -reject;
+            route -6 add ::0.0.0.0 -prefixlen 96 ::1 -reject; 
+            route -6 add ff02:: -prefixlen 16 ::1 -reject; 
+            service syslogd start;
+            service cron start;
+            service sshd start;
+        """
+
     def create_fs(self):
         if self.check_fs():
             raise ValueError(f"Jail FS exists: {self.name} ({self.zpath})")
@@ -295,17 +312,14 @@ class Jail:
     @check_fs_exists
     def configure_vnet(self):
         epair_host,epair_jail = self.epair
-        self.sysrc(f"ifconfig_{epair_jail}_ipv6=inet6 {self.ipv6}/64",
+        self.sysrc(f"network_interfaces=lo0 {epair_jail}",
+                   f"ifconfig_{epair_jail}_ipv6=inet6 {self.ipv6}/64",
                    f"ipv6_defaultrouter={self.gateway}",
                    f"ifconfig_lo0_ipv6=inet6 up")
 
     @check_fs_exists
-    def configure_host(self):
-        self.ifconfig(self.host.hostif,"inet6",self.ipv6)
-
-    @check_fs_exists
     @check_not_running
-    def start(self,vnet=True,private=True,jail_params=None):
+    def start(self,private=True,jail_params=None):
         params = self.host.DEFAULT_PARAMS.copy()
         params["name"] = self.hash
         params["path"] = self.path
@@ -313,25 +327,15 @@ class Jail:
         params["host.hostname"] = self.name
         params["osrelease"] = self.osrelease()
         params.update(jail_params or {})
-        if vnet:
-            self.create_epair(private)
-            self.configure_vnet()
-        else:
-            del params["vnet"]
-            del params["vnet.interface"]
-            params["ip6.addr"] = self.ipv6
-            self.configure_host()
+        self.create_epair(private)
+        self.configure_vnet()
         self.jail_start(*[f"{k}={v}" for k,v in params.items()])
-        if vnet:
-            self.local_route()
+        self.local_route()
 
     @check_running
     def stop(self):
-        if self.is_vnet():
-            self.remove_vnet()
-            self.destroy_epair()
-        else:
-            self.ifconfig(self.host.hostif,"inet6",self.ipv6,"-alias")
+        self.remove_vnet()
+        self.destroy_epair()
         self.jail_stop()
         self.umount_devfs()
 
@@ -388,7 +392,7 @@ if __name__ == "__main__":
     @click.pass_context
     def new(ctx,name):
         try:
-            jail = ctx.obj['host'].jail(name)
+            jail = ctx.obj["host"].jail(name)
             jail.create_fs()
             click.secho(f"Created jail: {jail.name} (id={jail.hash})",fg="green")
         except subprocess.CalledProcessError as e:
@@ -400,14 +404,17 @@ if __name__ == "__main__":
     @click.argument("name",nargs=1)
     @click.option("--private",is_flag=True)
     @click.option("--params",multiple=True)
-    @click.option("--vnet/--no-vnet",default=True)
+    @click.option("--fastboot",is_flag=True)
     @click.pass_context
-    def run(ctx,name,private,params,vnet):
+    def run(ctx,name,private,params,fastboot):
         try:
-            jail = ctx.obj['host'].jail(name)
+            jail = ctx.obj["host"].jail(name)
             if not jail.check_fs():
                 jail.create_fs()
-            jail.start(vnet=vnet,private=private,jail_params=dict([p.split("=") for p in params]))
+            jail_params = dict([p.split("=") for p in params])
+            if fastboot:
+                jail_params["exec.start"] = jail.fastboot_script()
+            jail.start(private=private,jail_params=jail_params)
             click.secho(f"Started jail: {jail.name} (id={jail.hash} ipv6={jail.ipv6})",fg="green")
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"{e} :: {e.stderr.strip()}")
@@ -418,12 +425,15 @@ if __name__ == "__main__":
     @click.argument("name",nargs=1)
     @click.option("--params",multiple=True)
     @click.option("--private",is_flag=True)
-    @click.option("--vnet/--no-vnet",default=True)
+    @click.option("--fastboot",is_flag=True)
     @click.pass_context
-    def start(ctx,name,private,params,vnet):
+    def start(ctx,name,private,params,fastboot):
         try:
-            jail = ctx.obj['host'].jail(name)
-            jail.start(vnet=vnet,private=private,jail_params=dict([p.split("=") for p in params]))
+            jail = ctx.obj["host"].jail(name)
+            jail_params = dict([p.split("=") for p in params])
+            if fastboot:
+                jail_params["exec.start"] = jail.fastboot_script()
+            jail.start(private=private,jail_params=jail_params)
             click.secho(f"Started jail: {jail.name} (id={jail.hash} ipv6={jail.ipv6})",fg="green")
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"{e} :: {e.stderr.strip()}")
@@ -435,7 +445,7 @@ if __name__ == "__main__":
     @click.pass_context
     def stop(ctx,name):
         try:
-            jail = ctx.obj['host'].jail(name)
+            jail = ctx.obj["host"].jail(name)
             jail.stop()
             click.secho(f"Stopped jail: {jail.name} ({jail.hash})",fg="green")
         except subprocess.CalledProcessError as e:
@@ -449,7 +459,7 @@ if __name__ == "__main__":
     @click.pass_context
     def remove(ctx,name,force):
         try:
-            jail = ctx.obj['host'].jail(name)
+            jail = ctx.obj["host"].jail(name)
             jail.remove(force=force)
             click.secho(f"Removed jail: {jail.name} ({jail.hash})",fg="green")
         except subprocess.CalledProcessError as e:
@@ -462,7 +472,7 @@ if __name__ == "__main__":
     def list(ctx):
         try:
             jails = [dict(name=j.name,hash=j.hash,ipv6=j.ipv6,running=j.is_running()) 
-                            for j in ctx.obj['host'].get_jails()]
+                            for j in ctx.obj["host"].get_jails()]
             click.echo(tabulate.tabulate(jails,headers="keys"))
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"{e} :: {e.stderr.strip()}")
@@ -475,7 +485,7 @@ if __name__ == "__main__":
     @click.pass_context
     def sysrc(ctx,name,args):
         try:
-            jail = ctx.obj['host'].jail(name)
+            jail = ctx.obj["host"].jail(name)
             click.secho(f"sysrc: {jail.name} ({jail.hash})",fg="yellow")
             if args:
                 click.secho(jail.sysrc("-v",*args),fg="green")
@@ -492,7 +502,7 @@ if __name__ == "__main__":
     @click.pass_context
     def jexec(ctx,name,args):
         try:
-            jail = ctx.obj['host'].jail(name)
+            jail = ctx.obj["host"].jail(name)
             jail.jexec(*args)
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"{e} :: {e.stderr.strip()}")
@@ -504,7 +514,7 @@ if __name__ == "__main__":
     @click.pass_context
     def interact(ctx,name):
         try:
-            jail = ctx.obj['host'].jail(name)
+            jail = ctx.obj["host"].jail(name)
             code.interact(local=locals())
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"{e} :: {e.stderr.strip()}")
@@ -513,7 +523,7 @@ if __name__ == "__main__":
 
     @cli.command()
     @click.argument("name",nargs=1)
-    @click.option("--source",type=click.File('rb'),required=True)
+    @click.option("--source",type=click.File("rb"),required=True)
     @click.option("--dest")
     @click.option("--mktemp",is_flag=True)
     @click.option("--mode",default="0755")
@@ -522,7 +532,7 @@ if __name__ == "__main__":
     @click.pass_context
     def install(ctx,name,source,dest,mktemp,mode,user,group):
         try:
-            jail = ctx.obj['host'].jail(name)
+            jail = ctx.obj["host"].jail(name)
             if dest:
                 n = jail.install(source,dest,mode,user,group)
                 click.secho(f"Installed to {dest} ({n} bytes)")

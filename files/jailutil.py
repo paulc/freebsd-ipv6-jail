@@ -289,8 +289,10 @@ class Jail:
         fd,path = tempfile.mkstemp(suffix,prefix,jdir,text)
         return (fd, path[len(self.path):])
 
-    def fastboot_script(self):
+    def fastboot_script(self,services=None):
         epair_host,epair_jail = self.epair
+        services = ";\n".join([f"service {s} start" for s in 
+                            (services or ["syslogd","cron","sshd"])])
         return f"""
             ifconfig lo0 inet6 up auto_linklocal;
             ifconfig {epair_jail} inet6 {self.ipv6} auto_linklocal;
@@ -299,9 +301,7 @@ class Jail:
             route -6 add ::ffff:0.0.0.0 -prefixlen 96 ::1 -reject;
             route -6 add ::0.0.0.0 -prefixlen 96 ::1 -reject; 
             route -6 add ff02:: -prefixlen 16 ::1 -reject; 
-            service syslogd start;
-            service cron start;
-            service sshd start;
+            {services}
         """
 
     def create_fs(self):
@@ -513,11 +513,13 @@ if __name__ == "__main__":
             raise click.ClickException(f"{e}")
 
     @cli.command()
-    @click.argument("name",nargs=1)
+    @click.argument("name",nargs=-1)
     @click.pass_context
-    def interact(ctx,name):
+    def repl(ctx,name):
         try:
-            jail = ctx.obj["host"].jail(name)
+            if name:
+                jail = ctx.obj["host"].jail(name[0])
+            host = ctx.obj["host"]
             code.interact(local=locals())
         except subprocess.CalledProcessError as e:
             raise click.ClickException(f"{e} :: {e.stderr.strip()}")

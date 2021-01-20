@@ -7,7 +7,7 @@ _log "freebsd-update install --not-running-from-cron || echo No updates availabl
 _log "pkg update"
 _log "pkg upgrade -y"
 
-_log sysrc  gateway_enable=YES \
+_log "sysrc gateway_enable=YES \
             ipv6_gateway_enable=YES \
             ip6addrctl_policy=ipv6_prefer \
             cloned_interfaces="bridge0" \
@@ -18,42 +18,35 @@ _log sysrc  gateway_enable=YES \
             firewall_script=/etc/ipfw.rules \
             syslogd_flags=-ss \
             sendmail_enable=NONE \
-            zfs_enable=YES 
+            zfs_enable=YES"
 
-_log tee -a /boot/loader.conf <<EOM
+_log "tee -a /boot/loader.conf" <<EOM
 net.inet.ip.fw.default_to_accept=1
 kern.racct.enable=1
 EOM
 
-_log install -v ./files/jail.conf /etc
-_log install -v ./files/devfs.rules /etc
+_log "install -v ./files/devfs.rules /etc"
 
-_log ex -s /etc/jail.conf <<EOM
-g/IPV6_PREFIX/s/IPV6_PREFIX/${IPV6_PREFIX}/p
-wq
-EOM
-
-_log install -v -m 755 ./files/ipfw.rules /etc
-_log ex -s /etc/ipfw.rules <<EOM
+_log "install -v -m 755 ./files/ipfw.rules /etc"
+_log "ex -s /etc/ipfw.rules" <<EOM
 g/IPV4_PREFIX/s/__IPV4_PREFIX__/${IPV4_PREFIX}/p
 g/IPV6_PREFIX/s/__IPV6_PREFIX__/${IPV6_PREFIX}/p
 wq
 EOM
 
-_log install -v -m 755 ./files/vnet.sh /root
-_log install -v -m 755 ./files/route_epair.sh /root
-
 if gpart show da0 | grep -qs CORRUPT
 then
     # Wrong disk size - fix and add zfs partition
-    _log gpart recover da0
-    _log gpart add -t freebsd-zfs da0
-    _log zpool create zroot $(gpart show da0 | awk '/freebsd-zfs/ { print "/dev/da0p" $3 }')
+    _log "gpart recover da0"
+    _log "gpart add -t freebsd-zfs da0"
+    _log "zpool create zroot $(gpart show da0 | awk '/freebsd-zfs/ { print "/dev/da0p" $3 }')"
 else 
     # Create ZFS file
-    _log truncate -s 10G /var/zroot
-    _log zpool create zroot /var/zroot
+    _log "truncate -s 10G /var/zroot"
+    _log "zpool create zroot /var/zroot"
 fi
+
+_log "pip install https://github.com/paulc/v6jail/releases/download/v6jail-1.0/v6jail-1.0.tar.gz"
 
 _log "zfs create -o mountpoint=/jail -o compression=lz4 zroot/jail"
 _log "zfs create zroot/jail/base"
@@ -83,3 +76,4 @@ _log "install -v files/dot.profile /usr/share/skel/"
 
 _log "rm -f /firstboot"
 _log "reboot"
+

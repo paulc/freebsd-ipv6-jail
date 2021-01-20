@@ -18,6 +18,9 @@ net.inet.ip.fw.default_to_accept=1
 kern.racct.enable=1
 EOM
 
+# Install packages
+_log "pkg install -y py37-pip"
+
 # Configure rc.conf
 _log "sysrc gateway_enable=YES \
             ipv6_gateway_enable=YES \

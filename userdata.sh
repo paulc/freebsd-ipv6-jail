@@ -13,4 +13,4 @@ cd $TMPDIR
 /usr/local/bin/git clone https://github.com/paulc/freebsd-ipv6-jail.git .
 
 . ./utils.sh
-. ./run.sh
+. ./run.sh | tee /var/log/config

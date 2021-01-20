@@ -1,12 +1,24 @@
 
+
+# Get network configuration
+
 IPV6_PREFIX=$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("::")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')
 IPV4_PREFIX=$(tr -d \" < /var/hcloud/public-ipv4)
+
+# Run updates
 
 _log "freebsd-update fetch --not-running-from-cron | head"
 _log "freebsd-update install --not-running-from-cron || echo No updates available"
 _log "pkg update"
 _log "pkg upgrade -y"
 
+# Configure loader.conf
+_log "tee -a /boot/loader.conf" <<EOM
+net.inet.ip.fw.default_to_accept=1
+kern.racct.enable=1
+EOM
+
+# Configure rc.conf
 _log "sysrc gateway_enable=YES \
             ipv6_gateway_enable=YES \
             ip6addrctl_policy=ipv6_prefer \
@@ -20,11 +32,7 @@ _log "sysrc gateway_enable=YES \
             sendmail_enable=NONE \
             zfs_enable=YES"
 
-_log "tee -a /boot/loader.conf" <<EOM
-net.inet.ip.fw.default_to_accept=1
-kern.racct.enable=1
-EOM
-
+# Install config files
 _log "install -v ./files/devfs.rules /etc"
 
 _log "install -v -m 755 ./files/ipfw.rules /etc"
@@ -34,6 +42,7 @@ g/IPV6_PREFIX/s/__IPV6_PREFIX__/${IPV6_PREFIX}/p
 wq
 EOM
 
+# Create ZFS volume for jails (grow disk if possible)
 if gpart show da0 | grep -qs CORRUPT
 then
     # Wrong disk size - fix and add zfs partition
@@ -46,27 +55,28 @@ else
     _log "zpool create zroot /var/zroot"
 fi
 
-_log "pip install https://github.com/paulc/v6jail/releases/download/v6jail-1.0/v6jail-1.0.tar.gz"
-
+# Create jail mountpoint
 _log "zfs create -o mountpoint=/jail -o compression=lz4 zroot/jail"
 _log "zfs create zroot/jail/base"
 
+# Install base os
 _log "( cd /jail/base && fetch -o - http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/$(uname -r | sed -e 's/-p[0-9]*$//')/base.txz | tar -xJf -)"
 _log "zfs snap zroot/jail/base@release"
 
-_log "printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /jail/base/etc/resolv.conf"
-_log "sysrc -f /jail/base/etc/rc.conf sendmail_enable=NONE syslogd_flags=-ss"
+# Install v6jail
+_log "pip install https://github.com/paulc/v6jail/releases/download/v6jail-1.0/v6jail-1.0.tar.gz"
+
+# Update base
+_log "python3 -m v6jail.cli update-base"
+
+# Install files to base
 _log "install -v -m 755 files/firstboot /jail/base/etc/rc.d"
 
-# Run updates inside /jail/base
-_log "mount -t devfs -o ruleset=2 devfs /jail/base/dev"
-_log "chroot /jail/base /usr/sbin/freebsd-update --not-running-from-cron fetch | head"
-_log "chroot /jail/base /usr/sbin/freebsd-update --not-running-from-cron install || echo No updates available"
-_log "chroot /jail/base /usr/bin/env ASSUME_ALWAYS_YES=true /usr/sbin/pkg bootstrap -f"
-_log "chroot /jail/base /usr/bin/env ASSUME_ALWAYS_YES=true /usr/sbin/pkg update"
-_log "umount -f /jail/base"
-
-_log "zfs snap zroot/jail/base@$(date +%s)"
+# Configure base
+_log "python3 -m v6jail.cli chroot-base --snapshot" <<EOM
+printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /etc/resolv.conf
+sysrc sendmail_enable=NONE syslogd_flags=-ss
+EOM
 
 # Cosmetic tidy-up
 _log "uname -a > /etc/motd"

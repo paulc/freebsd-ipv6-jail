@@ -75,7 +75,7 @@ _log "install -v -m 755 files/firstboot /jail/base/etc/rc.d"
 # Configure base
 _log "python3 -m v6jail.cli chroot-base --snapshot" <<EOM
 printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /etc/resolv.conf
-sysrc sendmail_enable=NONE syslogd_flags=-ss
+sysrc sendmail_enable=NONE syslogd_flags="-C -ss"
 EOM
 
 # Cosmetic tidy-up

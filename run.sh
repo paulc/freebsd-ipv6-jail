@@ -19,7 +19,7 @@ kern.racct.enable=1
 EOM
 
 # Install packages
-_log "pkg install -y py37-pip"
+_log "pkg install -y $(pkg search -q '^py3[0-9]+-pip-[0-9]')"
 
 # Configure rc.conf
 _log "sysrc gateway_enable=YES \
@@ -67,16 +67,16 @@ _log "( cd /jail/base && fetch -o - http://ftp.freebsd.org/pub/FreeBSD/releases/
 _log "zfs snap zroot/jail/base@release"
 
 # Install v6jail
-_log "pip install https://github.com/paulc/v6jail/releases/download/v6jail-1.0/v6jail-1.0.tar.gz"
+_log "/usr/local/bin/pip install https://github.com/paulc/v6jail/releases/download/v6jail-1.0/v6jail-1.0.tar.gz"
 
 # Update base
-_log "python3 -m v6jail.cli update-base"
+_log "/usr/local/bin/python3 -m v6jail.cli update-base"
 
 # Install files to base
 _log "install -v -m 755 files/firstboot /jail/base/etc/rc.d"
 
 # Configure base
-_log "python3 -m v6jail.cli chroot-base --snapshot" <<EOM
+_log "/usr/local/bin/python3 -m v6jail.cli chroot-base --snapshot" <<EOM
 printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /etc/resolv.conf
 sysrc sendmail_enable=NONE syslogd_flags="-C -ss"
 EOM

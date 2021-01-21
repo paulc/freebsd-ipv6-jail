@@ -70,6 +70,9 @@ _log "zfs snap zroot/jail/base@release"
 _log "/usr/local/bin/pip install https://github.com/paulc/v6jail/releases/download/v6jail-1.0/v6jail-1.0.tar.gz"
 
 # Update base
+
+# Need bridge0 to exist
+_log "ifconfig bridge0 create"
 _log "/usr/local/bin/python3 -m v6jail.cli update-base"
 
 # Install files to base

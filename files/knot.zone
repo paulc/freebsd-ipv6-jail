@@ -1,0 +1,4 @@
+__HOSTNAME__.   300     SOA     __HOSTNAME__ admin.__HOSTNAME__ 1 600 300 1200 300
+__HOSTNAME__.   300     NS      __HOSTNAME__.
+__HOSTNAME__.   300     A       __IPV4_ADDRESS__
+__HOSTNAME__.   300     AAAA    __IPV6_ADDRESS__

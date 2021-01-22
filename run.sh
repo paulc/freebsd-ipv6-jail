@@ -2,8 +2,10 @@
 
 # Get network configuration
 
-IPV6_PREFIX=$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("::")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')
-IPV4_PREFIX=$(tr -d \" < /var/hcloud/public-ipv4)
+IPV4_ADDRESS=$(tr -d \" < /var/hcloud/public-ipv4)
+IPV6_ADDRESS=$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("/")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')
+IPV6_PREFIX=${IPV6_ADDRESS%%::*}
+HOSTNAME=$(tr -d \" < /var/hcloud/hostname)
 
 # Run updates
 
@@ -20,6 +22,7 @@ EOM
 
 # Install packages
 _log "pkg install -y $(pkg search -q '^py3[0-9]+-pip-[0-9]')"
+_log "pkg install -y knot3"
 
 # Configure rc.conf
 _log "sysrc gateway_enable=YES \
@@ -33,15 +36,33 @@ _log "sysrc gateway_enable=YES \
             firewall_script=/etc/ipfw.rules \
             syslogd_flags=-ss \
             sendmail_enable=NONE \
-            zfs_enable=YES"
+            zfs_enable=YES \
+            knot_enable=YES \
+            knot_config=/usr/local/etc/knot/knot.conf"
 
 # Install config files
 _log "install -v ./files/devfs.rules /etc"
 
 _log "install -v -m 755 ./files/ipfw.rules /etc"
 _log "ex -s /etc/ipfw.rules" <<EOM
-g/IPV4_PREFIX/s/__IPV4_PREFIX__/${IPV4_PREFIX}/p
-g/IPV6_PREFIX/s/__IPV6_PREFIX__/${IPV6_PREFIX}/p
+g/__IPV4_ADDRESS__/s/__IPV4_PREFIX__/${IPV4_ADDRESS}/p
+g/__IPV6_PREFIX__/s/__IPV6_PREFIX__/${IPV6_PREFIX}/p
+wq
+EOM
+
+_log "install -v ./files/knot.conf /usr/local/etc/knot"
+_log "ex -s /usr/local/etc/knot/knot.conf" <<EOM
+g/__HOSTNAME__/s/__HOSTNAME__/${HOSTNAME}/p
+1,$p
+wq
+EOM
+
+_log "install -v ./files/knot.zone /var/db/knot/${HOSTNAME}.zone"
+_log "ex -s /var/db/knot/${HOSTNAME}.zone" <<EOM
+g/__HOSTNAME__/s/__HOSTNAME__/${HOSTNAME}/g
+g/__IPV4_ADDRESS__/s/__IPV4_ADDRESS__/${IPV4_ADDRESS}/g
+g/__IPV6_ADDRESS__/s/__IPV6_ADDRESS__/${IPV6_ADDRESS}/g
+1,$p
 wq
 EOM
 
@@ -73,13 +94,14 @@ _log "/usr/local/bin/pip install https://github.com/paulc/v6jail/releases/downlo
 
 # Need bridge0 to exist
 _log "ifconfig bridge0 create"
-# Install files to base
+
+# Install firstboot rc script to base
 _log "install -v -m 755 files/firstboot /jail/base/etc/rc.d"
 
 # Configure base
 _log "/usr/local/bin/python3 -m v6jail.cli chroot-base" <<EOM
 printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /etc/resolv.conf
-sysrc sshd_enable=YES sendmail_enable=NONE syslogd_flags="-C -ss"
+sysrc sshd_enable=YES sshd_flags=\"-o AuthenticationMethods=publickey\" sendmail_enable=NONE syslogd_flags="-C -ss"
 EOM
 _log "/usr/local/bin/python3 -m v6jail.cli update-base"
 

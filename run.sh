@@ -53,7 +53,6 @@ EOM
 _log "install -v ./files/knot.conf /usr/local/etc/knot"
 _log "ex -s /usr/local/etc/knot/knot.conf" <<EOM
 g/__HOSTNAME__/s/__HOSTNAME__/${HOSTNAME}/p
-1,\$p
 wq
 EOM
 
@@ -62,7 +61,7 @@ _log "ex -s /var/db/knot/${HOSTNAME}.zone" <<EOM
 g/__HOSTNAME__/s/__HOSTNAME__/${HOSTNAME}/g
 g/__IPV4_ADDRESS__/s/__IPV4_ADDRESS__/${IPV4_ADDRESS}/g
 g/__IPV6_ADDRESS__/s/__IPV6_ADDRESS__/${IPV6_ADDRESS}/g
-1,$p
+1,\$p
 wq
 EOM
 

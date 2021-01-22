@@ -9,7 +9,7 @@ _RED=$(printf "\033[0;31m")
 _YELLOW=$(printf "\033[0;33m")
 _CYAN=$(printf "\033[0;36m")
 
-_COLOUR=
+_COLOUR=${_COLOUR-}
 
 _log() {
     local _cmd="$@"

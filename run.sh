@@ -66,6 +66,9 @@ g/__IPV6_ADDRESS__/s/__IPV6_ADDRESS__/${IPV6_ADDRESS}/g
 wq
 EOM
 
+_log "install -v -m 755 ./files/zone-set.sh /root"
+_log "install -v -m 755 ./files/zone-del.sh /root"
+
 # Create ZFS volume for jails (grow disk if possible)
 if gpart show da0 | grep -qs CORRUPT
 then

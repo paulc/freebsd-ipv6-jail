@@ -53,7 +53,7 @@ EOM
 _log "install -v ./files/knot.conf /usr/local/etc/knot"
 _log "ex -s /usr/local/etc/knot/knot.conf" <<EOM
 g/__HOSTNAME__/s/__HOSTNAME__/${HOSTNAME}/p
-1,$p
+1,\$p
 wq
 EOM
 

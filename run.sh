@@ -4,8 +4,7 @@
 
 IPV4_ADDRESS=$(tr -d \" < /var/hcloud/public-ipv4)
 IPV6_ADDRESS=$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("/")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')
-IPV6_PREFIX=${IPV6_ADDRESS%%::*}
-HOSTNAME=$(tr -d \" < /var/hcloud/hostname)
+HOSTNAME=$(/usr/local/bin/python3 -c 'import yaml;print(yaml.safe_load(open("cloud-config"))["fqdn"])')
 
 # Run updates
 
@@ -19,6 +18,9 @@ _log "tee -a /boot/loader.conf" <<EOM
 net.inet.ip.fw.default_to_accept=1
 kern.racct.enable=1
 EOM
+
+# Set hostname to FQDN
+_log "hostname $HOSTNAME"
 
 # Install packages
 _log "pkg install -y $(pkg search -q '^py3[0-9]+-pip-[0-9]')"
@@ -45,8 +47,8 @@ _log "install -v ./files/devfs.rules /etc"
 
 _log "install -v -m 755 ./files/ipfw.rules /etc"
 _log "ex -s /etc/ipfw.rules" <<EOM
-g/__IPV4_ADDRESS__/s/__IPV4_PREFIX__/${IPV4_ADDRESS}/p
-g/__IPV6_PREFIX__/s/__IPV6_PREFIX__/${IPV6_PREFIX}/p
+g/__IPV4_ADDRESS__/s/__IPV4_ADDRESS__/${IPV4_ADDRESS}/p
+g/__IPV6_ADDRESS__/s/__IPV6_ADDRESS__/${IPV6_ADDRESS}/p
 wq
 EOM
 
@@ -86,7 +88,7 @@ _log "zfs create -o mountpoint=/jail -o compression=lz4 zroot/jail"
 _log "zfs create zroot/jail/base"
 
 # Install base os
-_log "( cd /jail/base && fetch -o - http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/$(uname -r | sed -e 's/-p[0-9]*$//')/base.txz | tar -xJf -)"
+_log "( cd /jail/base && fetch -qo - http://ftp.freebsd.org/pub/FreeBSD/releases/amd64/amd64/$(uname -r | sed -e 's/-p[0-9]*$//')/base.txz | tar -xJf -)"
 _log "zfs snap zroot/jail/base@release"
 
 # Install v6jail

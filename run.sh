@@ -113,7 +113,7 @@ _log "/usr/sbin/pw -R /jail/base usermod root -s /bin/sh -h -"
 _log "uname -a | tee /jail/base/etc/motd"
 
 # Need bridge0 to exist for v6jail
-_log "ifconfig bridge0 create"
+_log "ifconfig bridge0 inet || ifconfig bridge0 create"
 
 # Update base
 _log "/usr/local/bin/python3 -m v6jail.cli update-base"

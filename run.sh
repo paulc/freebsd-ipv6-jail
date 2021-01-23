@@ -43,7 +43,7 @@ _log "sysrc gateway_enable=YES \
             knot_config=/usr/local/etc/knot/knot.conf"
 
 # Install config files
-_log "install -v ./files/devfs.rules /etc"
+_log "install -v -m 644 ./files/devfs.rules /etc"
 
 _log "install -v -m 755 ./files/ipfw.rules /etc"
 _log "ex -s /etc/ipfw.rules" <<EOM
@@ -52,13 +52,13 @@ g/__IPV6_ADDRESS__/s/__IPV6_ADDRESS__/${IPV6_ADDRESS}/p
 wq
 EOM
 
-_log "install -v ./files/knot.conf /usr/local/etc/knot"
+_log "install -v -m 644 ./files/knot.conf /usr/local/etc/knot"
 _log "ex -s /usr/local/etc/knot/knot.conf" <<EOM
 g/__HOSTNAME__/s/__HOSTNAME__/${HOSTNAME}/p
 wq
 EOM
 
-_log "install -v ./files/knot.zone /var/db/knot/${HOSTNAME}.zone"
+_log "install -v -m 644 ./files/knot.zone /var/db/knot/${HOSTNAME}.zone"
 _log "ex -s /var/db/knot/${HOSTNAME}.zone" <<EOM
 g/__HOSTNAME__/s/__HOSTNAME__/${HOSTNAME}/g
 g/__IPV4_ADDRESS__/s/__IPV4_ADDRESS__/${IPV4_ADDRESS}/g
@@ -99,13 +99,14 @@ _log "/usr/local/bin/pip install https://github.com/paulc/v6jail/releases/downlo
 # Need bridge0 to exist
 _log "ifconfig bridge0 create"
 
-# Install firstboot rc script to base
+# Install empty rc.conf and firstboot rc script to base
+_log "install -v -m 644 /dev/null /jail/base/etc/rc.conf"
 _log "install -v -m 755 files/firstboot /jail/base/etc/rc.d"
 
 # Configure base
 _log "/usr/local/bin/python3 -m v6jail.cli chroot-base" <<EOM
 printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /etc/resolv.conf
-sysrc sshd_enable=YES sshd_flags=\"-o AuthenticationMethods=publickey\" sendmail_enable=NONE syslogd_flags="-C -ss"
+sysrc sshd_enable=YES sshd_flags="-o AuthenticationMethods=publickey" sendmail_enable=NONE syslogd_flags="-C -ss"
 EOM
 _log "/usr/local/bin/python3 -m v6jail.cli update-base"
 

@@ -1,13 +1,11 @@
-
+#!/bin/sh
 
 # Get network configuration
-
 IPV4_ADDRESS=$(tr -d \" < /var/hcloud/public-ipv4)
 IPV6_ADDRESS=$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("/")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')
 HOSTNAME=$(/usr/local/bin/python3 -c 'import yaml;print(yaml.safe_load(open("/var/hcloud/cloud-config"))["fqdn"])')
 
 # Run updates
-
 _log "freebsd-update fetch --not-running-from-cron | head"
 _log "freebsd-update install --not-running-from-cron || echo No updates available"
 _log "pkg update"
@@ -45,6 +43,7 @@ _log "sysrc gateway_enable=YES \
 # Install config files
 _log "install -v -m 644 ./files/devfs.rules /etc"
 
+# Configure IPFW
 _log "install -v -m 755 ./files/ipfw.rules /etc"
 _log "ex -s /etc/ipfw.rules" <<EOM
 g/__IPV4_ADDRESS__/s/__IPV4_ADDRESS__/${IPV4_ADDRESS}/p
@@ -52,6 +51,7 @@ g/__IPV6_ADDRESS__/s/__IPV6_ADDRESS__/${IPV6_ADDRESS}/p
 wq
 EOM
 
+# Configure knot
 _log "install -v -m 644 ./files/knot.conf /usr/local/etc/knot"
 _log "ex -s /usr/local/etc/knot/knot.conf" <<EOM
 g/__HOSTNAME__/s/__HOSTNAME__/${HOSTNAME}/p
@@ -67,6 +67,11 @@ g/__IPV6_ADDRESS__/s/__IPV6_ADDRESS__/${IPV6_ADDRESS}/g
 wq
 EOM
 
+# Cosmetic tidy-up
+_log "uname -a | tee /etc/motd"
+_log "chsh -s /bin/sh root"
+_log "install -v -m 644 files/dot.profile /root/.profile"
+_log "install -v -m 644 files/dot.profile /usr/share/skel/"
 _log "install -v -m 755 ./files/zone-set.sh /root"
 _log "install -v -m 755 ./files/zone-del.sh /root"
 
@@ -94,28 +99,22 @@ _log "zfs snap zroot/jail/base@release"
 # Install v6jail
 _log "/usr/local/bin/pip install https://github.com/paulc/v6jail/releases/download/v6jail-1.0/v6jail-1.0.tar.gz"
 
-# Update base
+# Install files to base
+_log "install -v -m 644 files/rc.conf-jail /jail/base/etc/rc.conf"
+_log "install -v -m 755 files/firstboot /jail/base/etc/rc.d"
+_log "install -v -m 644 files/dot.profile /jail/base/usr/share/skel/"
+_log "install -v -m 644 files/dot.profile /jail/base/root/.profile"
+_log "install -v -m 644 files/resolv.conf-ipv6 /jail/base/etc/resolv.conf"
+_log "/usr/sbin/pw -R /jail/base usermod root -s /bin/sh -h -"
+_log "uname -a | tee /jail/base/etc/motd"
 
-# Need bridge0 to exist
+# Need bridge0 to exist for v6jail
 _log "ifconfig bridge0 create"
 
-# Install empty rc.conf and firstboot rc script to base
-_log "install -v -m 644 /dev/null /jail/base/etc/rc.conf"
-_log "install -v -m 755 files/firstboot /jail/base/etc/rc.d"
-
-# Configure base
-_log "/usr/local/bin/python3 -m v6jail.cli chroot-base" <<EOM
-printf 'nameserver %s\n' 2001:4860:4860::6464 2001:4860:4860::64 | tee /etc/resolv.conf
-sysrc sshd_enable=YES sshd_flags="-o AuthenticationMethods=publickey" sendmail_enable=NONE syslogd_flags="-C -ss"
-EOM
+# Update base
 _log "/usr/local/bin/python3 -m v6jail.cli update-base"
 
-# Cosmetic tidy-up
-_log "uname -a > /etc/motd"
-_log "chsh -s /bin/sh root"
-_log "install -v files/dot.profile /root/.profile"
-_log "install -v files/dot.profile /usr/share/skel/"
-
+# Remove /firstboot and reboot
 _log "rm -f /firstboot"
 _log "reboot"
 

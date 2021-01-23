@@ -101,7 +101,7 @@ _log "( cd /jail/base && fetch -qo - http://ftp.freebsd.org/pub/FreeBSD/releases
 _log "zfs snap zroot/jail/base@release"
 
 # Install v6jail
-_log "/usr/local/bin/pip install https://github.com/paulc/v6jail/releases/download/v6jail-1.0/v6jail-1.0.tar.gz"
+_log "/usr/local/bin/pip install --upgrade https://github.com/paulc/v6jail/releases/download/v6jail-1.0/v6jail-1.0.tar.gz"
 
 # Install files to base
 _log "install -v -m 644 files/rc.conf-jail /jail/base/etc/rc.conf"

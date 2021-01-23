@@ -21,8 +21,8 @@ net.inet.ip.fw.default_to_accept=1
 kern.racct.enable=1
 EOM
 
-# Set hostname to FQDN
-_log "hostname $HOSTNAME"
+# Set hostname
+_log "sysrc hostname=\"${HOSTNAME}\""
 
 # Install packages
 _log "pkg install -y $(pkg search -q '^py3[0-9]+-pip-[0-9]')"

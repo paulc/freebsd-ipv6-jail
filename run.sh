@@ -5,9 +5,9 @@ set -o errexit
 set -o nounset
 
 # Get network configuration
-: ${IPV4_ADDRESS:=$(tr -d \" < /var/hcloud/public-ipv4)}
-: ${IPV6_ADDRESS:=$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("/")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')}
-: ${HOSTNAME:=$(/usr/local/bin/python3 -c 'import yaml;print(yaml.safe_load(open("/var/hcloud/cloud-config"))["fqdn"])')}
+IPV4_ADDRESS=${IPV4_ADDRESS-$(tr -d \" < /var/hcloud/public-ipv4)}
+IPV6_ADDRESS=${IPV6_ADDRESS-$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("/")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')}
+HOSTNAME=${HOSTNAME-$(/usr/local/bin/python3 -c 'import yaml;print(yaml.safe_load(open("/var/hcloud/cloud-config"))["fqdn"])')}
 
 # Run updates
 _log "freebsd-update fetch --not-running-from-cron | head"

@@ -78,6 +78,7 @@ _log "install -v -m 644 files/dot.profile /root/.profile"
 _log "install -v -m 644 files/dot.profile /usr/share/skel/"
 _log "install -v -m 755 ./files/zone-set.sh /root"
 _log "install -v -m 755 ./files/zone-del.sh /root"
+_log "install -v -m 755 ./files/linux-init.sh /root"
 
 # Create ZFS volume for jails (grow disk if possible)
 if gpart show da0 | grep -qs CORRUPT

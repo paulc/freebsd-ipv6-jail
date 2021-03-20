@@ -101,9 +101,10 @@ _log "( cd /jail/base && fetch -qo - http://ftp.freebsd.org/pub/FreeBSD/releases
 _log "zfs snap zroot/jail/base@release"
 
 # Install v6jail
-_log "pip install shiv"
-_log "git clone https://github.com/paulc/v6jail.git"
-_log "(cd v6jail && make shiv && install -v -m 755 bin/v6 /usr/local/bin)"
+_log "pkg install -y gmake"
+_log "/usr/local/bin/pip install shiv"
+_log "/usr/local/bin/git clone https://github.com/paulc/v6jail.git"
+_log "(cd v6jail && /usr/local/bin/gmake shiv && install -v -m 755 bin/v6 /usr/local/bin)"
 
 # Install files to base
 _log "install -v -m 644 files/rc.conf-jail /jail/base/etc/rc.conf"

@@ -101,6 +101,7 @@ _log "( cd /jail/base && fetch -qo - http://ftp.freebsd.org/pub/FreeBSD/releases
 _log "zfs snap zroot/jail/base@release"
 
 # Install v6jail
+_log "pip install shiv"
 _log "git clone https://github.com/paulc/v6jail.git"
 _log "(cd v6jail && make shiv && install -v -m 755 bin/v6 /usr/local/bin)"
 

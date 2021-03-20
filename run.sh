@@ -4,6 +4,9 @@ set -o pipefail
 set -o errexit
 set -o nounset
 
+# ENsire /usr/local/bin on PATH
+PATH="${PATH}:/usr/local/bin"
+
 # Get network configuration
 IPV4_ADDRESS=${IPV4_ADDRESS-$(tr -d \" < /var/hcloud/public-ipv4)}
 IPV6_ADDRESS=${IPV6_ADDRESS-$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("/")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')}

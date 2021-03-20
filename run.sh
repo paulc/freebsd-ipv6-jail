@@ -50,24 +50,23 @@ _log "install -v -m 644 ./files/devfs.rules /etc"
 # Configure IPFW
 _log "install -v -m 755 ./files/ipfw.rules /etc"
 _log "ex -s /etc/ipfw.rules" <<EOM
-g/__IPV4_ADDRESS__/s/__IPV4_ADDRESS__/${IPV4_ADDRESS}/p
-g/__IPV6_ADDRESS__/s/__IPV6_ADDRESS__/${IPV6_ADDRESS}/p
+%s/__IPV4_ADDRESS__/${IPV4_ADDRESS}/gp
+%s/__IPV6_ADDRESS__/${IPV6_ADDRESS}/gp
 wq
 EOM
 
 # Configure knot
 _log "install -v -m 644 ./files/knot.conf /usr/local/etc/knot"
 _log "ex -s /usr/local/etc/knot/knot.conf" <<EOM
-g/__HOSTNAME__/s/__HOSTNAME__/${HOSTNAME}/p
+%s/__HOSTNAME__/${HOSTNAME}/gp
 wq
 EOM
 
 _log "install -v -m 644 ./files/knot.zone /var/db/knot/${HOSTNAME}.zone"
 _log "ex -s /var/db/knot/${HOSTNAME}.zone" <<EOM
-g/__HOSTNAME__/s/__HOSTNAME__/${HOSTNAME}/g
-g/__IPV4_ADDRESS__/s/__IPV4_ADDRESS__/${IPV4_ADDRESS}/g
-g/__IPV6_ADDRESS__/s/__IPV6_ADDRESS__/${IPV6_ADDRESS}/g
-1,\$p
+%s/__HOSTNAME__/${HOSTNAME}/gp
+%s/__IPV4_ADDRESS__/${IPV4_ADDRESS}/gp
+%s/__IPV6_ADDRESS__/${IPV6_ADDRESS}/gp
 wq
 EOM
 
@@ -102,7 +101,8 @@ _log "( cd /jail/base && fetch -qo - http://ftp.freebsd.org/pub/FreeBSD/releases
 _log "zfs snap zroot/jail/base@release"
 
 # Install v6jail
-_log "/usr/local/bin/pip install --upgrade https://github.com/paulc/v6jail/releases/download/v6jail-1.0/v6jail-1.0.tar.gz"
+_log "git clone https://github.com/paulc/v6jail.git"
+_log "(cd v6jail && make shiv && install -v -m 755 bin/v6 /usr/local/bin)"
 
 # Install files to base
 _log "install -v -m 644 files/rc.conf-jail /jail/base/etc/rc.conf"
@@ -113,11 +113,14 @@ _log "install -v -m 644 files/resolv.conf-ipv6 /jail/base/etc/resolv.conf"
 _log "/usr/sbin/pw -R /jail/base usermod root -s /bin/sh -h -"
 _log "uname -a | tee /jail/base/etc/motd"
 
+# Configure IPv6
+_log "sysrc ifconfig_vtnet0_ipv6=${IPV4_ADDRESS}/128"
+
 # Need bridge0 to exist for v6jail
 _log "ifconfig bridge0 inet || ifconfig bridge0 create"
 
 # Update base
-_log "/usr/local/bin/python3 -m v6jail.cli update-base"
+_log "/usr/local/bin/v6 update-base"
 
 # Remove /firstboot and reboot
 _log "rm -f /firstboot"

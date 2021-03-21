@@ -38,8 +38,8 @@ _log "pkg install -y knot3"
 _log "sysrc gateway_enable=YES \
             ipv6_gateway_enable=YES \
             cloned_interfaces=bridge0 \
-            ifconfig_vtnet0_ipv6=${IPV6_ADDRESS}/128 \
-            ifconfig_bridge0_ipv6=\"inet6 ${SUBNET} prefixlen 65\"
+            ifconfig_vtnet0_ipv6=\"inet6 ${IPV6_ADDRESS} prefixlen 128\" \
+            ifconfig_bridge0_ipv6=\"inet6 ${SUBNET} prefixlen 65\" \
             ip6addrctl_policy=ipv6_prefer \
             firewall_enable=YES \
             firewall_logif=YES \

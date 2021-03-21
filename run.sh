@@ -40,6 +40,7 @@ _log "sysrc gateway_enable=YES \
             cloned_interfaces=bridge0 \
             ifconfig_vtnet0_ipv6=\"inet6 ${IPV6_ADDRESS} prefixlen 128\" \
             ifconfig_bridge0_ipv6=\"inet6 ${SUBNET} prefixlen 65\" \
+            ifconfig_bridge0_alias0=\"inet6 fe80::1\" \
             ip6addrctl_policy=ipv6_prefer \
             firewall_enable=YES \
             firewall_logif=YES \

@@ -4,7 +4,7 @@ set -o pipefail
 set -o errexit
 set -o nounset
 
-# ENsire /usr/local/bin on PATH
+# Ensure /usr/local/bin on PATH
 PATH="${PATH}:/usr/local/bin"
 
 # Get network configuration
@@ -119,10 +119,13 @@ _log "/usr/sbin/pw -R /jail/base usermod root -s /bin/sh -h -"
 _log "uname -a | tee /jail/base/etc/motd"
 
 # Configure IPv6
-_log "sysrc ifconfig_vtnet0_ipv6=${IPV4_ADDRESS}/128"
+_log "sysrc ifconfig_vtnet0_ipv6=${IPV6_ADDRESS}/128"
+
+SUBNET=$(/usr/local/bin/python3 -c 'import sys,ipaddress;print(next(list(ipaddress.IPv6Network(sys.argv[1],False).subnets())[1].hosts()))' ${IPV6_ADDRESS}/64)
 
 # Need bridge0 to exist for v6jail
 _log "ifconfig bridge0 inet || ifconfig bridge0 create"
+_log "ifconfig bridge0 inet6 ${SUBNET} prefixlen 65"
 
 # Update base
 _log "/usr/local/bin/v6 update-base"

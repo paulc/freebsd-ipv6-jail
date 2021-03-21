@@ -32,7 +32,7 @@ _log "sysrc hostname=\"${HOSTNAME}\""
 
 # Install packages
 _log "pkg install -y $(pkg search -q '^py3[0-9]+-pip-[0-9]')"
-_log "pkg install -y knot3"
+_log "pkg install -y rsync knot3"
 
 # Configure rc.conf
 _log "sysrc gateway_enable=YES \

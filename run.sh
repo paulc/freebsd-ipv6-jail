@@ -7,10 +7,13 @@ set -o nounset
 # Ensure /usr/local/bin on PATH
 PATH="${PATH}:/usr/local/bin"
 
-# Get network configuration
+# Get network configuration from metadata
 IPV4_ADDRESS=${IPV4_ADDRESS-$(tr -d \" < /var/hcloud/public-ipv4)}
 IPV6_ADDRESS=${IPV6_ADDRESS-$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("/")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')}
 HOSTNAME=${HOSTNAME-$(/usr/local/bin/python3 -c 'import yaml;print(yaml.safe_load(open("/var/hcloud/cloud-config"))["fqdn"])')}
+
+# Get /65 subnet for bridge0
+SUBNET=$(/usr/local/bin/python3 -c 'import sys,ipaddress;print(next(list(ipaddress.IPv6Network(sys.argv[1],False).subnets())[1].hosts()))' ${IPV6_ADDRESS}/64)
 
 # Run updates
 _log "freebsd-update fetch --not-running-from-cron | head"
@@ -34,9 +37,10 @@ _log "pkg install -y knot3"
 # Configure rc.conf
 _log "sysrc gateway_enable=YES \
             ipv6_gateway_enable=YES \
+            cloned_interfaces=bridge0 \
+            ifconfig_vtnet0_ipv6=${IPV6_ADDRESS}/128 \
+            ifconfig_bridge0_ipv6=\"inet6 ${SUBNET} prefixlen 65\"
             ip6addrctl_policy=ipv6_prefer \
-            cloned_interfaces="bridge0" \
-            ifconfig_bridge0=\"up addm vtnet0\" \
             firewall_enable=YES \
             firewall_logif=YES \
             firewall_nat64_enable=YES \
@@ -118,12 +122,7 @@ _log "install -v -m 644 files/resolv.conf-ipv6 /jail/base/etc/resolv.conf"
 _log "/usr/sbin/pw -R /jail/base usermod root -s /bin/sh -h -"
 _log "uname -a | tee /jail/base/etc/motd"
 
-# Configure IPv6
-_log "sysrc ifconfig_vtnet0_ipv6=${IPV6_ADDRESS}/128"
-
-SUBNET=$(/usr/local/bin/python3 -c 'import sys,ipaddress;print(next(list(ipaddress.IPv6Network(sys.argv[1],False).subnets())[1].hosts()))' ${IPV6_ADDRESS}/64)
-
-# Need bridge0 to exist for v6jail
+# Need bridge0 to exist and have address for v6jail
 _log "ifconfig bridge0 inet || ifconfig bridge0 create"
 _log "ifconfig bridge0 inet6 ${SUBNET} prefixlen 65"
 

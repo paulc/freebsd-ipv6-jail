@@ -129,6 +129,9 @@ _log "ifconfig bridge0 inet6 ${SUBNET} prefixlen 65"
 # Update base
 _log "/usr/local/bin/v6 update-base"
 
+# Create config file 
+_log "/usr/local/bin/v6 config --proxy true | tee /usr/local/etc/v6jail.ini"
+
 # Remove /firstboot and reboot
 _log "rm -f /firstboot"
 _log "reboot"

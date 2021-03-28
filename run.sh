@@ -31,7 +31,7 @@ EOM
 _log "sysrc hostname=\"${HOSTNAME}\""
 
 # periodic.conf
-_Log "install -v -m 644 ./files/periodic.conf /etc"
+_log "install -v -m 644 ./files/periodic.conf /etc"
 
 # Install packages
 _log "pkg install -y $(pkg search -q '^py3[0-9]+-pip-[0-9]')"

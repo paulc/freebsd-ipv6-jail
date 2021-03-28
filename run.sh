@@ -30,6 +30,9 @@ EOM
 # Set hostname
 _log "sysrc hostname=\"${HOSTNAME}\""
 
+# periodic.conf
+_Log "install -v -m 644 ./files/periodic.conf /etc"
+
 # Install packages
 _log "pkg install -y $(pkg search -q '^py3[0-9]+-pip-[0-9]')"
 _log "pkg install -y rsync knot3"
@@ -52,7 +55,7 @@ _log "sysrc gateway_enable=YES \
             knot_enable=YES \
             knot_config=/usr/local/etc/knot/knot.conf"
 
-# Install config files
+# Install devfs config files
 _log "install -v -m 644 ./files/devfs.rules /etc"
 
 # Configure IPFW

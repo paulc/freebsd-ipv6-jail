@@ -1,2 +1,3 @@
-nameserver 2001:4860:4860::6464
-nameserver 2001:4860:4860::64
+# Cloudflare NAT64
+nameserver 2606:4700:4700::64
+nameserver 2606:4700:4700::6400

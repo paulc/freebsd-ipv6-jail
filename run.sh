@@ -4,22 +4,40 @@ set -o pipefail
 set -o errexit
 set -o nounset
 
+# Script expects the following config vars
+# IPV4_HOST=
+# IPV6_HOST=
+# IPV6_PREFIXLEN=
+# IPV4_ROUTE=
+# IPV6_ROUTE=
+# NAT64_NETWORK=
+# NAT64_HOST=
+# NAT64_PREFIXLEN=
+# ROOT_PK=
+# HOSTNAME=
+# MODE=ROUTED|BRIDGED
+
+# Source CONFIG if exists
+if [ -r ./CONFIG ]; then
+    . ./CONFIG
+fi
+
+# Check we have config
+: ${IPV4_HOST?Error: Config not found}
+
 # Ensure /usr/local/bin on PATH
 PATH="${PATH}:/usr/local/bin"
 
-# Get network configuration from metadata
-IPV4_ADDRESS=${IPV4_ADDRESS-$(tr -d \" < /var/hcloud/public-ipv4)}
-IPV6_ADDRESS=${IPV6_ADDRESS-$(/usr/local/bin/python3 -c 'import json;c=json.load(open("/var/hcloud/network-config"));print([x["address"].split("/")[0] for x in c["config"][0]["subnets"] if x.get("ipv6")][0])')}
-HOSTNAME=${HOSTNAME-$(/usr/local/bin/python3 -c 'import yaml;print(yaml.safe_load(open("/var/hcloud/cloud-config"))["fqdn"])')}
-
-# Get /65 subnet for bridge0
-SUBNET=$(/usr/local/bin/python3 -c 'import sys,ipaddress;print(next(list(ipaddress.IPv6Network(sys.argv[1],False).subnets())[1].hosts()))' ${IPV6_ADDRESS}/64)
-
 # Run updates
-_log "freebsd-update fetch --not-running-from-cron | head"
+_log "freebsd-update fetch --not-running-from-cron"
 _log "freebsd-update install --not-running-from-cron || echo No updates available"
+
+# Bootstrap pkg
+_log "env ASSUME_ALWAYS_YES=yes pkg bootstrap"
 _log "pkg update"
-_log "pkg upgrade -y"
+
+# Install packages
+_log "pkg install -y python3 py37-pip git-lite rsync knot3"
 
 # Configure loader.conf
 _log "tee -a /boot/loader.conf" <<EOM
@@ -33,18 +51,15 @@ _log "sysrc hostname=\"${HOSTNAME}\""
 # periodic.conf
 _log "install -v -m 644 ./files/periodic.conf /etc"
 
-# Install packages
-_log "pkg install -y $(pkg search -q '^py3[0-9]+-pip-[0-9]')"
-_log "pkg install -y rsync knot3 ttyd"
-
-# Configure rc.conf
+# Configure standard rc.conf settings
+_log "sysrc -x ifconfig_DEFAULT || echo"
 _log "sysrc gateway_enable=YES \
             ipv6_gateway_enable=YES \
-            cloned_interfaces=bridge0 \
-            ifconfig_vtnet0_ipv6=\"inet6 ${IPV6_ADDRESS} prefixlen 128\" \
-            ifconfig_bridge0_ipv6=\"inet6 ${SUBNET} prefixlen 65\" \
-            ifconfig_bridge0_alias0=\"inet6 fe80::1\" \
+            defaultrouter=${IPV4_ROUTE} \
+            ipv6_defaultrouter=${IPV6_ROUTE} \
             ip6addrctl_policy=ipv6_prefer \
+            sshd_enable=YES \
+            sshd_flags=\"-o PermitRootLogin=prohibit-password\" \
             firewall_enable=YES \
             firewall_logif=YES \
             firewall_nat64_enable=YES \
@@ -55,29 +70,74 @@ _log "sysrc gateway_enable=YES \
             knot_enable=YES \
             knot_config=/usr/local/etc/knot/knot.conf"
 
+if [ "${MODE}" = "ROUTED" ]; then
+    _log "sysrc cloned_interfaces=\"bridge0\" \
+                ifconfig_vtnet0=\"inet ${IPV4_HOST} up\" \
+                ifconfig_vtnet0_ipv6=\"inet6 ${IPV6_HOST} prefixlen ${IPV6_PREFIXLEN} auto_linklocal up\" \
+                ifconfig_bridge0_ipv6=\"inet6 ${NAT64_HOST} prefixlen ${NAT64_PREFIXLEN} auto_linklocal up\" \
+                ifconfig_bridge0_alias0=\"inet6 fe80::1\""
+else
+    _log "sysrc cloned_interfaces=\"bridge0\" \
+                ifconfig_vtnet0=\"up\" \
+                ifconfig_bridge0=\"inet ${IPV4_HOST} up\" \
+                ifconfig_bridge0_ipv6=\"inet6 ${IPV6_HOST} prefixlen ${IPV6_PREFIXLEN} auto_linklocal up\""
+    # Attach vtnet0 - work round 13.0 vtnet bug
+    if [ $(uname -K) -gt 1300000 ]; then 
+        _log "tee /etc/start_if.bridge0" <<EOM
+ifconfig vtnet0 down
+ifconfig bridge0 addm vtnet0
+ifconfig vtnet0 up
+EOM
+    else
+        _log "tee /etc/start_if.bridge0" <<EOM
+ifconfig bridge0 addm vtnet0
+EOM
+    fi
+fi
+
+# SSHD keys
+if [ ! -f /root/.ssh/authorized_keys ]; then
+    _log "install -v -d -m 700 /root/.ssh"
+    _log "install -v -m 600 /dev/null /root/.ssh/authorized_keys"
+    _log "printf \"%s %s %s\n\" $ROOT_PK | tee -a /root/.ssh/authorized_keys"
+fi
+
 # Install devfs config files
 _log "install -v -m 644 ./files/devfs.rules /etc"
 
 # Configure IPFW
-_log "install -v -m 755 ./files/ipfw.rules /etc"
+if [ "${MODE}" = "ROUTED" ]; then
+    NAT64_NETWORK="${NAT64_NETWORK}/${NAT64_PREFIXLEN}"
+else
+    NAT64_NETWORK="${IPV6_HOST}/${IPV6_PREFIXLEN}"
+fi
+_log "install -v -m 755 ./files/ipfw.rules /etc/ipfw.rules"
 _log "ex -s /etc/ipfw.rules" <<EOM
-%s/__IPV4_ADDRESS__/${IPV4_ADDRESS}/gp
-%s/__IPV6_ADDRESS__/${IPV6_ADDRESS}/gp
+%s!__IPV4_HOST__!${IPV4_HOST}!gp
+%s!__IPV6_HOST__!${IPV6_HOST}!gp
+%s!__IPV4_NAT__!${IPV4_HOST}!gp
+%s!__NAT64_NETWORK__!${NAT64_NETWORK}!gp
 wq
 EOM
 
 # Configure knot
+if [ "${MODE}" = "ROUTED" ]; then
+    KNOT_IPV6="${NAT64_HOST}"
+else
+    KNOT_IPV6="${IPV6_HOST}"
+fi
+
 _log "install -v -m 644 ./files/knot.conf /usr/local/etc/knot"
 _log "ex -s /usr/local/etc/knot/knot.conf" <<EOM
 %s/__HOSTNAME__/${HOSTNAME}/gp
+%s/__IPV6_ADDRESS__/${KNOT_IPV6}/gp
 wq
 EOM
 
 _log "install -v -m 644 ./files/knot.zone /var/db/knot/${HOSTNAME}.zone"
 _log "ex -s /var/db/knot/${HOSTNAME}.zone" <<EOM
 %s/__HOSTNAME__/${HOSTNAME}/gp
-%s/__IPV4_ADDRESS__/${IPV4_ADDRESS}/gp
-%s/__IPV6_ADDRESS__/${IPV6_ADDRESS}/gp
+%s/__IPV6_ADDRESS__/${KNOT_IPV6}/gp
 wq
 EOM
 
@@ -90,15 +150,8 @@ _log "install -v -m 755 ./files/zone-set.sh /root"
 _log "install -v -m 755 ./files/zone-del.sh /root"
 _log "install -v -m 755 ./files/linux-init.sh /root"
 
-# Create ZFS volume for jails (grow disk if possible)
-if gpart show da0 | grep -qs CORRUPT
-then
-    # Wrong disk size - fix and add zfs partition
-    _log "gpart recover da0"
-    _log "gpart add -t freebsd-zfs da0"
-    _log "zpool create zroot $(gpart show da0 | awk '/freebsd-zfs/ { print "/dev/da0p" $3 }')"
-else 
-    # Create ZFS file
+# Create ZFS file
+if ! zfs list zroot; then
     _log "truncate -s 10G /var/zroot"
     _log "zpool create zroot /var/zroot"
 fi
@@ -114,8 +167,14 @@ _log "zfs snap zroot/jail/base@release"
 # Install v6jail
 _log "pkg install -y gmake"
 _log "/usr/local/bin/pip install shiv"
-_log "/usr/local/bin/git clone https://github.com/paulc/v6jail.git"
-_log "(cd v6jail && /usr/local/bin/gmake shiv && install -v -m 755 bin/v6 /usr/local/bin)"
+
+TMPDIR=$(mktemp -d)
+(
+    cd $TMPDIR
+    _log "/usr/local/bin/git clone https://github.com/paulc/v6jail.git"
+    _log "(cd v6jail && /usr/local/bin/gmake shiv && install -v -m 755 bin/v6 /usr/local/bin)"
+    rm -rf $TMPDIR
+)
 
 # Install files to base
 _log "install -v -m 644 files/rc.conf-jail /jail/base/etc/rc.conf"
@@ -123,18 +182,27 @@ _log "install -v -m 755 files/firstboot /jail/base/etc/rc.d"
 _log "install -v -m 644 files/dot.profile /jail/base/usr/share/skel/"
 _log "install -v -m 644 files/dot.profile /jail/base/root/.profile"
 _log "install -v -m 644 files/resolv.conf-ipv6 /jail/base/etc/resolv.conf"
-_log "/usr/sbin/pw -R /jail/base usermod root -s /bin/sh -h -"
+# _log "/usr/sbin/pw -R /jail/base usermod root -s /bin/sh -h -"
 _log "uname -a | tee /jail/base/etc/motd"
 
 # Need bridge0 to exist and have address for v6jail
 _log "ifconfig bridge0 inet || ifconfig bridge0 create"
-_log "ifconfig bridge0 inet6 ${SUBNET} prefixlen 65"
+
+# Use hostname as salt for v6 (prevents jail names colliding on same network)
+_log "hostname ${HOSTNAME}"
+SALT=$(/usr/local/bin/python3 -c 'import hashlib,subprocess;print(hashlib.md5(subprocess.run("hostname",capture_output=True).stdout).hexdigest())')
+
+# Create config file 
+if [ "${MODE}" = "ROUTED" ]; then
+    _log "ifconfig bridge0 inet6 ${NAT64_HOST} prefixlen ${NAT64_PREFIXLEN}"
+    _log "/usr/local/bin/v6 config --salt $SALT --network ${NAT64_NETWORK} | tee /usr/local/etc/v6jail.ini"
+else
+    _log "ifconfig bridge0 inet6 ${IPV6_HOST} prefixlen ${IPV6_PREFIXLEN}"
+    _log "/usr/local/bin/v6 config --salt $SALT | tee /usr/local/etc/v6jail.ini"
+fi
 
 # Update base
 _log "/usr/local/bin/v6 update-base"
-
-# Create config file 
-_log "/usr/local/bin/v6 config --proxy true | tee /usr/local/etc/v6jail.ini"
 
 # Remove /firstboot and reboot
 _log "rm -f /firstboot"

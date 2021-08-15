@@ -37,7 +37,14 @@ _log "env ASSUME_ALWAYS_YES=yes pkg bootstrap"
 _log "pkg update"
 
 # Install packages
-_log "pkg install -y python3 py37-pip git-lite rsync knot3"
+
+# Make sure we have latest version of python3
+_log "pkg remove python3 python37 || echo"
+_log "pkg install -y python3 git-lite rsync knot3"
+
+PY_VER=$(python3 -c 'import sys;print("py",sys.version_info.major,sys.version_info.minor,sep="")')
+
+_log "pkg install -y ${PY_VER}-pip"
 
 # Configure loader.conf
 _log "tee -a /boot/loader.conf" <<EOM

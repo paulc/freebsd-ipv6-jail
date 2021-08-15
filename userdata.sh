@@ -14,7 +14,7 @@ export IPV6_PREFIXLEN=128
 export IPV4_ROUTE=$(route -4 get default | awk '/gateway:/ { print $2 }')
 export IPV6_ROUTE=$(route -6 get default | awk '/gateway:/ { print $2 }')
 # Get /65 subnet for jail network
-export NAT64_NETWORK=$(/usr/local/bin/python3 -c 'import sys,ipaddress;print(next(list(ipaddress.IPv6Network(sys.argv[1],False).subnets())[1].hosts()))' ${IPV6_HOST}/64)
+export NAT64_NETWORK=$(/usr/local/bin/python3 -c 'import sys,ipaddress; print(list(ipaddress.IPv6Network(sys.argv[1],False).subnets())[-1].network_address)' ${IPV6_HOST}/64)
 export NAT64_HOST=${NAT64_NETWORK}
 export NAT64_PREFIXLEN=65
 export HOSTNAME=$(hostname)

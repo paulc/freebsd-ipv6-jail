@@ -33,8 +33,6 @@ The rough sequence of events is:
 - For this example it configures the server as a jail host with:
 
     * ZFS filesystem for jails (`/jail`)
-    * Base jail in `/jail/base` 
-    * `jail.conf` file and `/root/vnet.sh` utility to allow dynamic craetion of
-      IPv6 VNET jails from `/jail/base`
+    * v6jail setup
     * NAT64 running on host (via IPFW) to allow IPv4 connectivity from jails
 

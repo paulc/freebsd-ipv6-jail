@@ -39,7 +39,7 @@ _log "pkg update"
 # Install packages
 
 # Make sure we have latest version of python3
-_log "pkg remove python3 python37 || echo"
+_log "pkg remove -y python3 python37 || echo"
 _log "pkg install -y python3 git-lite rsync knot3"
 
 PY_VER=$(python3 -c 'import sys;print("py",sys.version_info.major,sys.version_info.minor,sep="")')

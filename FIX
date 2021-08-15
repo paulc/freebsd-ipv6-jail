@@ -1,0 +1,10 @@
+
+- IPv6 nameservers
+    2a01:4ff:ff00::add:1
+    2a01:4ff:ff00::add:2
+
+- IPv4 route
+    Make sure default router reachable from vtnet0
+
+    static_routes="default"
+    route_default="172.31.1.1 -iface vtnet0"

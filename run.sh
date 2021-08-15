@@ -211,6 +211,11 @@ fi
 # Update base
 _log "/usr/local/bin/v6 update-base"
 
+# Check for any local config 
+if [ -f ./local.sh ]; then
+    sh ./local.sh
+fi
+
 # Remove /firstboot and reboot
 _log "rm -f /firstboot"
 _log "reboot"

@@ -125,9 +125,9 @@ EOM
 
 # Configure knot
 if [ "${MODE}" = "ROUTED" ]; then
-    KNOT_IPV6="${NAT64_HOST}"
+    KNOT_IPV6="${NAT64_HOST%/*}"
 else
-    KNOT_IPV6="${IPV6_HOST}"
+    KNOT_IPV6="${IPV6_HOST%/*}"
 fi
 
 _log "install -v -m 644 ./files/knot.conf /usr/local/etc/knot"

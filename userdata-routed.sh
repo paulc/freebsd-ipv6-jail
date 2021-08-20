@@ -15,7 +15,7 @@ export IPV4_ROUTE=$(route -4 get default | awk '/gateway:/ { print $2 }')
 export IPV6_ROUTE=$(route -6 get default | awk '/gateway:/ { print $2 }')
 export NAT64_NETWORK=__NAT64_NETWORK__
 export NAT64_HOST=__NAT64_HOST__
-export NAT64_PREFIXLEN=65
+export NAT64_PREFIXLEN=64
 export HOSTNAME=$(hostname)
 export MODE=ROUTED
 

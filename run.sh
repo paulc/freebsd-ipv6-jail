@@ -77,7 +77,7 @@ if [ "${MODE}" = "ROUTED" ]; then
     _log "sysrc cloned_interfaces=\"bridge0\" \
                 ifconfig_vtnet0=\"inet ${IPV4_HOST} up\" \
                 ifconfig_vtnet0_ipv6=\"inet6 ${IPV6_HOST} prefixlen ${IPV6_PREFIXLEN} auto_linklocal up\" \
-                ifconfig_bridge0_ipv6=\"inet6 ${NAT64_HOST} prefixlen ${NAT64_PREFIXLEN} auto_linklocal up\" \
+                ifconfig_bridge0_ipv6=\"inet6 ${NAT64_HOST} prefixlen ${NAT64_PREFIXLEN} auto_linklocal mtu 65535 up\" \
                 ifconfig_bridge0_alias0=\"inet6 fe80::1\""
 else
     _log "sysrc cloned_interfaces=\"bridge0\" \

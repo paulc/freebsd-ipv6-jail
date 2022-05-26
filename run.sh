@@ -28,6 +28,9 @@ fi
 # Ensure /usr/local/bin on PATH
 PATH="${PATH}:/usr/local/bin"
 
+# Resize ZFS partition if necessary
+_log "service growfs onestart"
+
 # Run updates
 _log "freebsd-update fetch --not-running-from-cron"
 _log "freebsd-update install --not-running-from-cron || echo No updates available"
